@@ -7,6 +7,7 @@ module ActionSpec
 
       def initialize(endpoint)
         @endpoint = endpoint
+        @scopes = []
       end
 
       PARAM_LOCATIONS.each do |location_name|
@@ -55,6 +56,17 @@ module ActionSpec
         add_body(:form, { name => options.merge(type:) })
       end
 
+      def scope(name, &block)
+        scopes.push(name.to_sym)
+        instance_exec(&block)
+      ensure
+        scopes.pop
+      end
+
+      def openapi(enabled)
+        endpoint.options[:openapi] = enabled
+      end
+
       def response(code, description = nil, media_type = nil, desc: nil, **options)
         endpoint.add_response(
           code,
@@ -73,10 +85,11 @@ module ActionSpec
       private
 
         attr_reader :endpoint
+        attr_reader :scopes
 
         def add_param(location_name, name, type, required:, **options)
           schema = ActionSpec::Schema.build(type, **options)
-          endpoint.request.add_param(location_name, ActionSpec::Schema::Field.new(name:, required:, schema:))
+          endpoint.request.add_param(location_name, ActionSpec::Schema::Field.new(name:, required:, schema:, scopes: scopes.dup))
         end
 
         def add_many(location_name, params, required:)
@@ -86,7 +99,12 @@ module ActionSpec
               if (schema_options.keys - ActionSpec::Schema::OPTION_KEYS).present?
                 endpoint.request.add_param(
                   location_name,
-                  ActionSpec::Schema::Field.new(name:, required:, schema: ActionSpec::Schema.from_definition(definition))
+                  ActionSpec::Schema::Field.new(
+                    name:,
+                    required:,
+                    schema: ActionSpec::Schema.from_definition(definition),
+                    scopes: scopes.dup
+                  )
                 )
               else
                 add_param(location_name, name, String, required:, **definition)
@@ -100,7 +118,7 @@ module ActionSpec
         end
 
         def add_body(media_type, definition)
-          ActionSpec::Schema.build_fields(definition).each_value do |field|
+          ActionSpec::Schema.build_fields(definition, scopes: scopes.dup).each_value do |field|
             endpoint.request.add_body(media_type, field)
           end
         end

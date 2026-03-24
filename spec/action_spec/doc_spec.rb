@@ -39,4 +39,22 @@ RSpec.describe ActionSpec::Doc do
     expect(endpoint.summary).to eq("Index users")
     expect(endpoint.request.query.fields).to be_empty
   end
+
+  it "tracks custom scopes for fields declared inside scope blocks" do
+    controller = build_controller do
+      doc :create do
+        scope :user do
+          query :user_id, Integer
+          form data: { name!: String }
+        end
+      end
+
+      def create; end
+    end
+
+    endpoint = controller.action_spec_for(:create)
+
+    expect(endpoint.request.query.field(:user_id).scopes).to eq([:user])
+    expect(endpoint.request.body.field(:name).scopes).to eq([:user])
+  end
 end

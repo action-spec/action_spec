@@ -40,13 +40,14 @@ module ActionSpec
         ObjectOf.new(build_fields(definition))
       end
 
-      def build_fields(definition_hash)
+      def build_fields(definition_hash, scopes: [])
         definition_hash.each_with_object(ActiveSupport::OrderedHash.new) do |(name, definition), fields|
           schema = build_field_schema(definition)
           fields[field_name(name)] = Field.new(
             name: field_name(name),
             required: required_key?(name),
-            schema:
+            schema:,
+            scopes:
           )
         end
       end

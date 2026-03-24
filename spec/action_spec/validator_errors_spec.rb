@@ -6,10 +6,6 @@ RSpec.describe ActionSpec::Validator do
   include_context "with reset ActionSpec config"
 
   it "collects enum, pattern, and range errors together" do
-    ActionSpec.configure do |config|
-      config.rescue_invalid_parameters = false
-    end
-
     controller = build_controller do
       before_action :validate_and_coerce_params!
 
@@ -42,10 +38,6 @@ RSpec.describe ActionSpec::Validator do
   end
 
   it "raises a bad request error when validation fails" do
-    ActionSpec.configure do |config|
-      config.rescue_invalid_parameters = false
-    end
-
     controller = build_controller do
       before_action :validate_and_coerce_params!
 
@@ -90,7 +82,6 @@ RSpec.describe ActionSpec::Validator do
     )
 
     ActionSpec.configure do |config|
-      config.rescue_invalid_parameters = false
       config.error_messages[:invalid_type] = ->(_attribute, options) { "should be coercible to #{options.fetch(:expected)}" }
     end
 

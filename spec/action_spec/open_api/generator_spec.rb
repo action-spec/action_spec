@@ -146,6 +146,63 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     expect(operation.fetch("responses")).to eq("200" => { "description" => "OK" })
   end
 
+  it "skips endpoints marked with openapi false inside doc" do
+    stub_const("InternalUsersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:index, "Internal users") do
+        openapi false
+        query :page, Integer
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/internal/users",
+          defaults: { controller: "internal_users", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    expect(document.fetch("paths")).to eq({})
+  end
+
+  it "skips endpoints marked with openapi false inside doc_dry" do
+    stub_const("AdminReportsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc_dry :index do
+        openapi false
+      end
+
+      doc(:index, "Admin reports") do
+        query :page, Integer
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/admin/reports",
+          defaults: { controller: "admin_reports", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    expect(document.fetch("paths")).to eq({})
+  end
+
   it "writes YAML output when asked" do
     stub_const("ProfilesController", Class.new(ActionController::Base) do
       include ActionSpec::Doc

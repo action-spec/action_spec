@@ -48,6 +48,7 @@ module ActionSpec
             next unless (controller = controller_for(route))
             next unless controller.respond_to?(:action_spec_for)
             next unless (endpoint = controller.action_spec_for(route_action(route)))
+            next if endpoint.options[:openapi] == false
 
             path = normalized_path(route)
             next if path.blank?

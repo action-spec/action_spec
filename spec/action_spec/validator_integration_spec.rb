@@ -10,7 +10,7 @@ RSpec.describe "ActionSpec validator integration" do
     ActionSpec.instance_variable_set(:@config, previous)
   end
 
-  it "rescues invalid parameters with the default response" do
+  it "raises invalid parameters instead of rendering a default JSON response" do
     I18n.backend.store_translations(
       :en,
       activemodel: {
@@ -36,29 +36,23 @@ RSpec.describe "ActionSpec validator integration" do
       end
     end
 
-    status, headers, body = dispatch(
-      controller,
-      action: :create,
-      method: "POST",
-      path: "/users",
-      params: { birthday: "not-a-date" }
-    )
-
-    expect(status).to eq(400)
-    expect(headers["Content-Type"]).to include("application/json")
-
-    payload = json_body(body)
-    expect(payload.fetch("errors")).to include(
-      "page" => include("Page is required"),
-      "birthday" => include("Birthday must be a valid date")
-    )
+    expect do
+      dispatch(
+        controller,
+        action: :create,
+        method: "POST",
+        path: "/users",
+        params: { birthday: "not-a-date" }
+      )
+    end.to raise_error(ActionSpec::InvalidParameters) { |error|
+      expect(error.errors.to_hash(full_messages: true)).to include(
+        page: include("Page is required"),
+        birthday: include("Birthday must be a valid date")
+      )
+    }
   end
 
   it "humanizes nested attribute paths through i18n" do
-    ActionSpec.configure do |config|
-      config.rescue_invalid_parameters = false
-    end
-
     I18n.backend.store_translations(
       :en,
       activemodel: {

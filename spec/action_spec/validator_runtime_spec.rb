@@ -32,9 +32,9 @@ RSpec.describe ActionSpec::Validator do
           birthday_class: px[:birthday].class.name,
           raw_page_class: params[:page].class.name,
           raw_birthday_class: params[:birthday].class.name,
-          authorization: px[:headers][:authorization],
-          authorization_original: px[:headers]["Authorization"],
-          authorization_rack: px[:headers]["HTTP_AUTHORIZATION"]
+          authorization: px.scope[:headers][:authorization],
+          authorization_original: px.scope[:headers]["Authorization"],
+          authorization_rack: px.scope[:headers]["HTTP_AUTHORIZATION"]
         }
       end
     end
@@ -67,6 +67,54 @@ RSpec.describe ActionSpec::Validator do
     expect(payload.fetch("authorization_original")).to eq("Bearer token")
     expect(payload.fetch("authorization_rack")).to eq("Bearer token")
     expect(payload.fetch("px")).to have_key("request_id")
+  end
+
+  it "exposes built-in buckets and custom DSL scopes through px.scope" do
+    controller = build_controller do
+      doc :create do
+        path! :account_id, Integer
+
+        scope :user do
+          query :user_id, Integer
+          form data: {
+            name!: String,
+            admin: :boolean
+          }
+        end
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({ account_id: "7" }, {})
+    cookies = Struct.new(:to_hash).new({})
+    params = ActionController::Parameters.new(
+      user_id: "9",
+      name: "Tom",
+      admin: "true"
+    )
+    runner_controller = Struct.new(:params, :request, :cookie_jar).new(params, request, cookies) do
+      def send(name, *args)
+        return cookie_jar if name == :cookies
+
+        super
+      end
+    end
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+
+    px = result.px
+
+    expect(px.scope[:path]).to include(account_id: 7)
+    expect(px.scope[:query]).to include(user_id: 9)
+    expect(px.scope[:body]).to include(name: "Tom", admin: true)
+    expect(px.scope[:user]).to include(user_id: 9, name: "Tom", admin: true)
   end
 
   it "coerces values into px without mutating params" do
@@ -129,7 +177,7 @@ RSpec.describe ActionSpec::Validator do
     expect(px[:rate]).to eq(5)
     expect(px[:profile]).to eq("nickname" => "neo")
     expect(px[:file]).to equal(uploaded_file)
-    expect(px[:body]).to include(:birthday, :rate, :profile, :file)
+    expect(px.scope[:body]).to include(:birthday, :rate, :profile, :file)
     expect(params[:birthday]).to eq("2025-10-17")
     expect(params[:rate]).to eq("5")
     expect(params[:file]).to equal(uploaded_file)

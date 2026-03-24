@@ -6,7 +6,7 @@ Concise and Powerful API Documentation Solution for Rails.
 
 - OpenAPI version: `v3.2.0`
 - Requires: Ruby 3.1+ and Rails 7.0+
-- Note: this project was implemented with Codex in about 2 hours, has not yet been manually reviewed, and has not been validated in production. It does, however, come with fairly detailed RSpec tests generated with Codex.
+- Note: this project was implemented with Codex in about 3 hours, has not yet been manually reviewed, and has not been validated in production. It does, however, come with fairly detailed RSpec tests generated with Codex.
 
 ## Table Of Contents
 
@@ -23,9 +23,8 @@ Concise and Powerful API Documentation Solution for Rails.
   - [Type And Boundary Matrix](#type-and-boundary-matrix)
 - [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
   - [Validation Flow](#validation-flow)
-  - [Reading Validated Values With `px`](#reading-validated-values-with-px)
+  - [Reading Processed Values With `px`](#reading-processed-values-with-px)
   - [Errors](#errors)
-  - [Default Rescue Behavior](#default-rescue-behavior)
 - [Configuration And I18n](#configuration-and-i18n)
   - [Configuration](#configuration)
   - [I18n](#i18n)
@@ -106,6 +105,7 @@ bin/rails action_spec:gen \
 Notes:
 
 - only routed controller actions with a matching `doc` declaration are included
+- endpoints with `openapi false` are skipped even when routed
 - Rails paths such as `/users/:id(.:format)` are rendered as `/users/{id}`
 - parameters, request bodies, and response descriptions are generated from the current DSL support
 - if config and environment variables do not provide `TITLE` or `VERSION`, ActionSpec falls back to application-derived defaults
@@ -150,18 +150,26 @@ end
 
 ```ruby
 class ApplicationController < ActionController::API
-  doc_dry %i[show update destroy] do
+  doc_dry(%i[show update destroy]) {
     path! :id, Integer
-  end
+  }
 
-  doc_dry :index do
+  doc_dry(:index) {
     query :page, Integer, default: 1
     query :per, Integer, default: 20
-  end
+  }
 end
 ```
 
 All matching dry blocks are applied before the action-specific `doc`.
+
+You can also opt an action out of OpenAPI generation from either `doc` or `doc_dry`:
+
+```ruby
+doc {
+  openapi false
+}
+```
 
 ### DSL Reference
 
@@ -237,6 +245,33 @@ data :file, File
 ```
 
 For `body/body!`, `json/json!`, and `form/form!`, the bang form is currently kept for DSL compatibility. At runtime they all contribute to the same body contract, and root-body requiredness is not yet enforced as a separate rule.
+
+#### OpenAPI
+
+```ruby
+openapi false
+```
+
+Use this when an action should stay out of the generated OpenAPI document. It also works inside `doc_dry`.
+
+#### Scope
+
+Use `scope` when you want a grouped view that spans multiple request locations:
+
+```ruby
+doc {
+  scope(:user) {
+    query :user_id, Integer
+    form data: { name: String }
+  }
+}
+```
+
+Then read it from `px.scope`:
+
+```ruby
+px.scope[:user] # => { user_id: 1, name: "Tom" }
+```
 
 #### Response 
 
@@ -339,7 +374,7 @@ end
 
 `User.schemas` returns a hash that can be passed directly into `form data:`, `json data:`, or `body`.
 
-By default it includes all model fields:
+By default, it includes all model fields:
 
 ```ruby
 User.schemas
@@ -409,6 +444,8 @@ Example:
 - DSL says `query :page, Integer`
 - result: `px[:page] == "2"`
 
+You can safely put this hook on a base controller. If the current action has no matching `doc`, ActionSpec skips validation and returns an empty `px`.
+
 #### `validate_and_coerce_params!`
 
 Validates and coerces values before exposing them on `px`.
@@ -423,36 +460,41 @@ Example:
 - DSL says `query :page, Integer`
 - result: `px[:page] == 2`
 
-### Reading Validated Values With `px`
+This hook also skips actions without a matching `doc`, so it is safe to declare on a shared base controller.
 
-`px` is a hash.
+### Reading Processed Values With `px`
+
+`px` stores the processed values produced by ActionSpec. With `validate_params!` they stay raw; with `validate_and_coerce_params!` they are coerced values.
 
 ```ruby
 px[:id]
 px[:page]
 px[:profile][:nickname]
 px.to_h
+px.scope[:user]
 ```
 
-It also includes grouped buckets:
+Grouped views live under `px.scope`:
 
 ```ruby
-px[:path]
-px[:query]
-px[:body]
-px[:headers]
-px[:cookies]
+px.scope[:path]
+px.scope[:query]
+px.scope[:body]
+px.scope[:headers]
+px.scope[:cookies]
 ```
 
 Notes:
 
-- root values from path/query/body are also flattened into `px[:name]`
+- every declared field from path/query/body is also flattened into the top-level `px[:field]`
+- custom `scope(:name)` buckets are also exposed through `px.scope[:name]`
+- headers and cookies stay inside their own grouped buckets; for example, `px[:Authorization]` is not a top-level shortcut
 - header keys are stored in lowercase dashed form, but reading remains compatible with original forms such as `Authorization` and `HTTP_AUTHORIZATION`, for example:
 
 ```ruby
-px[:headers][:authorization]
-px[:headers]["Authorization"]
-px[:headers]["HTTP_AUTHORIZATION"]
+px.scope[:headers][:authorization]
+px.scope[:headers]["Authorization"]
+px.scope[:headers]["HTTP_AUTHORIZATION"]
 ```
 
 - original `params` are not mutated
@@ -461,60 +503,43 @@ px[:headers]["HTTP_AUTHORIZATION"]
 
 Validation errors are stored in `ActiveModel::Errors`.
 
-If invalid parameters are not rescued, ActionSpec raises `ActionSpec::InvalidParameters`:
+When validation fails, ActionSpec raises `ActionSpec::InvalidParameters`:
 
 ```ruby
 begin
   validate_and_coerce_params!
 rescue ActionSpec::InvalidParameters => error
+  error.message
   error.errors.full_messages
 end
 ```
 
 The exception also keeps the full validation result on `error.result` and `error.parameters`.
+ActionSpec does not render a default error response for you, so each application can decide its own rescue and JSON format.
 
-### Default Rescue Behavior
+`error.message` is built from `error.errors.full_messages.to_sentence`, so it follows normal `ActiveModel::Errors` wording:
 
-By default, when a controller raises `ActionSpec::InvalidParameters`, ActionSpec catches it automatically and returns a JSON error response:
+- single error: `"Page is required"`
+- multiple errors: `"Page is required and Birthday must be a valid date"`
+- fallback when no detailed errors are present: `"Invalid parameters"`
 
-```ruby
-rescue_from ActionSpec::InvalidParameters
-```
-
-The default JSON response is:
-
-```json
-{
-  "errors": {
-    "page": ["Page is required"]
-  }
-}
-```
+Use `error.errors` when you need structured details, and `error.message` when you only need a single summary string.
 
 ## Configuration And I18n
 
 ### Configuration
 
 ```ruby
-ActionSpec.configure do |config|
-  config.rescue_invalid_parameters = true
-  config.invalid_parameters_status = :bad_request
+ActionSpec.configure { |config|
   config.open_api_output = "docs/openapi.yml"
   config.open_api_title = "My API"
   config.open_api_version = "2026.03"
   config.open_api_server_url = "https://api.example.com"
 
-  config.error_messages[:invalid_type] = ->(_attribute, options) do
+  config.error_messages[:invalid_type] = ->(_attribute, options) {
     "should be coercible to #{options.fetch(:expected)}"
-  end
-
-  config.invalid_parameters_renderer = ->(controller, error) do
-    controller.render json: {
-      code: "invalid_parameters",
-      errors: error.errors.to_hash(full_messages: true)
-    }, status: :unprocessable_entity
-  end
-end
+  }
+}
 ```
 
 Available config keys:
@@ -522,18 +547,6 @@ Available config keys:
 - `invalid_parameters_exception_class`
   Default: `ActionSpec::InvalidParameters`.
   Controls which exception class is raised when validation fails.
-
-- `invalid_parameters_status`
-  Default: `:bad_request`.
-  Controls the HTTP status used by the built-in `rescue_from` renderer.
-
-- `rescue_invalid_parameters`
-  Default: `true`.
-  When this option is enabled, controllers use the default `rescue_from ActionSpec::InvalidParameters`.
-
-- `invalid_parameters_renderer`
-  Default: `nil`.
-  Lets you replace the built-in JSON error response. It can be a proc receiving `(controller, error)`, or a block executed in controller context.
 
 - `error_messages`
   Default: `{}`.
@@ -574,13 +587,13 @@ en:
 You can also override messages per error type or per attribute in Ruby:
 
 ```ruby
-ActionSpec.configure do |config|
+ActionSpec.configure { |config|
   config.error_messages[:required] = "must be present"
   config.error_messages[:invalid_type] = ->(_attribute, options) { "must be a valid #{options.fetch(:expected)}" }
   config.error_messages[:page] = {
     required: "page is mandatory"
   }
-end
+}
 ```
 
 ## What Is Not Implemented Yet
@@ -605,7 +618,8 @@ end
 - richer schema keywords beyond the current subset, including nullable/blank semantics, object-level constraints, and composition keywords such as `oneOf`, `anyOf`, `allOf`, and `not`
 
 ## Contributing
-.
+
+Contributions / Issues are welcome.
 
 ## License
 The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).

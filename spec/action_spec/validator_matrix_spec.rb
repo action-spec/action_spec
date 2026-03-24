@@ -33,10 +33,6 @@ RSpec.describe ActionSpec::Validator do
   end
 
   it "records nested and array-item validation failures with precise attribute paths" do
-    ActionSpec.configure do |config|
-      config.rescue_invalid_parameters = false
-    end
-
     controller = build_controller do
       before_action :validate_and_coerce_params!
 

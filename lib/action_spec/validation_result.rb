@@ -5,26 +5,29 @@ module ActionSpec
     extend ActiveModel::Naming
     extend ActiveModel::Translation
 
+    BUILT_IN_SCOPES = %i[path query body headers cookies].freeze
+
+    class << self
+      def empty_px
+        new.px
+      end
+    end
+
     attr_reader :errors, :px
 
     def initialize
       @errors = ActiveModel::Errors.new(self)
-      @px = ActiveSupport::HashWithIndifferentAccess.new(
-        path: ActiveSupport::HashWithIndifferentAccess.new,
-        query: ActiveSupport::HashWithIndifferentAccess.new,
-        body: ActiveSupport::HashWithIndifferentAccess.new,
-        headers: HeaderHash.new,
-        cookies: ActiveSupport::HashWithIndifferentAccess.new
-      )
+      @px = build_px
     end
 
     def invalid?
       errors.any?
     end
 
-    def assign(location, key, value)
+    def assign(location, key, value, scopes: [])
       bucket(location)[key] = value
       px[key] = value if root_bucket?(location)
+      Array(scopes).each { |scope_name| scope_bucket(scope_name)[key] = value }
     end
 
     def add_error(attribute, type, **options)
@@ -60,8 +63,28 @@ module ActionSpec
 
     private
 
+      def build_px
+        values = ActiveSupport::HashWithIndifferentAccess.new
+        scope = ActiveSupport::HashWithIndifferentAccess.new
+
+        BUILT_IN_SCOPES.each do |scope_name|
+          bucket = scope_name == :headers ? HeaderHash.new : ActiveSupport::HashWithIndifferentAccess.new
+          values[scope_name] = bucket
+          scope[scope_name] = bucket
+        end
+
+        # Keep px hash-like while exposing grouped views through px.scope.
+        values.instance_variable_set(:@scope, scope)
+        values.define_singleton_method(:scope) { @scope }
+        values
+      end
+
       def bucket(location)
-        px.fetch(location)
+        px.scope.fetch(location)
+      end
+
+      def scope_bucket(name)
+        px.scope[name] ||= ActiveSupport::HashWithIndifferentAccess.new
       end
 
       def root_bucket?(location)

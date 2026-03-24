@@ -28,7 +28,7 @@ module ActionSpec
             value = resolve_field(field, result:, source:, location:)
             next if value.equal?(ActionSpec::Schema::Missing)
 
-            result.assign(location, storage_key(field, location), value)
+            result.assign(location, storage_key(field, location), value, scopes: field.scopes)
           end
         end
 

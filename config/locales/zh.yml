@@ -1,6 +1,0 @@
-zh:
-  activemodel:
-    errors:
-      messages:
-        required: "不能为空"
-        invalid_type: "必须是有效的%{expected}"

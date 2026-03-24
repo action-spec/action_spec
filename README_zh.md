@@ -6,7 +6,7 @@ Concise and Powerful API Documentation Solution for Rails.
 
 - OpenAPI 版本: `v3.2.0`
 - 要求: Ruby 3.1+ 和 Rails 7.0+
-- 注意：本项目使用 Codex 花费两个小时实现，尚未人工 review，未在生产环境验证过。（但是已驱使 Codex 生成了比较详细的 Rspec 测试）
+- 注意：本项目使用 Codex 花费三个小时实现，尚未人工 review，未在生产环境验证过。（但是已驱使 Codex 生成了比较详细的 Rspec 测试）
 
 ## 目录
 
@@ -23,9 +23,8 @@ Concise and Powerful API Documentation Solution for Rails.
    5. [类型与边界矩阵](#5-类型与边界矩阵)
 4. [参数验证和类型转换](#参数验证和类型转换)
    1. [参数处理流程](#参数处理流程)
-   2. [`px` 怎么用](#px-怎么用)
+   2. [`px` 里的值怎么读](#px-里的值怎么读)
    3. [错误处理](#错误处理)
-   4. [默认 `rescue_from`](#默认-rescue_from)
 5. [配置和 I18n](#配置和-i18n)
    1. [配置](#配置)
    2. [I18n](#i18n)
@@ -34,7 +33,7 @@ Concise and Powerful API Documentation Solution for Rails.
 
 ```ruby
 class UsersController < ApplicationController
-   before_action :validate_and_coerce_params!, only: :create
+  before_action :validate_and_coerce_params!, only: :create
 
   doc {
     header :Authorization, String
@@ -106,9 +105,10 @@ bin/rails action_spec:gen \
 说明：
 
 1. 只会生成那些已经有对应 `doc` 声明、并且真的挂在 Rails 路由上的 controller action。
-2. 像 `/users/:id(.:format)` 这样的 Rails 路径，会输出成 `/users/{id}`。
-3. 请求参数、请求体、响应描述，会基于当前 DSL 能表达的内容生成。
-4. 如果配置和环境变量里都没有提供 `TITLE` 或 `VERSION`，ActionSpec 会使用应用名推导的默认值。
+2. 如果某个 action 写了 `openapi false`，即使路由存在，也不会生成到文档里。
+3. 像 `/users/:id(.:format)` 这样的 Rails 路径，会输出成 `/users/{id}`。
+4. 请求参数、请求体、响应描述，会基于当前 DSL 能表达的内容生成。
+5. 如果配置和环境变量里都没有提供 `TITLE` 或 `VERSION`，ActionSpec 会使用应用名推导的默认值。
 
 ## Doc DSL
 
@@ -150,18 +150,26 @@ end
 
 ```ruby
 class ApplicationController < ActionController::API
-  doc_dry %i[show update destroy] do
+  doc_dry(%i[show update destroy]) {
     path! :id, Integer
-  end
+  }
 
-  doc_dry :index do
+  doc_dry(:index) {
     query :page, Integer, default: 1
     query :per, Integer, default: 20
-  end
+  }
 end
 ```
 
 对应 action 的 dry 声明会先应用，再应用当前 `doc` 自己的声明。
+
+如果你希望某个 action 不进入 OpenAPI 文档，也可以在 `doc` 或 `doc_dry` 中这样写：
+
+```ruby
+doc {
+  openapi false
+}
+```
 
 ### DSL 详细说明
 
@@ -241,7 +249,34 @@ data :file, File
 1. 运行时校验里，`body/body!`、`json/json!`、`form/form!` 最终都会汇总进同一份请求体契约。
 2. `body!`、`json!`、`form!` 目前主要是为了保留 DSL 兼容性；“整个 body 是否 required” 这个根级语义，运行时还没有单独做规则区分。
 
-#### 3. response
+#### 3. OpenAPI
+
+```ruby
+openapi false
+```
+
+当某个 action 不应该出现在生成的 OpenAPI 文档中时，可以这样声明。放在 `doc_dry` 里也同样有效。
+
+#### 4. Scope
+
+如果你希望把多个位置的字段合并成一个分组视图，可以使用 `scope`：
+
+```ruby
+doc {
+  scope(:user) {
+    query :user_id, Integer
+    form data: { name: String }
+  }
+}
+```
+
+运行时可以从 `px.scope` 读取：
+
+```ruby
+px.scope[:user] # => { user_id: 1, name: "Tom" }
+```
+
+#### 5. response
 
 ```ruby
 response 200, desc: "success"
@@ -416,6 +451,8 @@ before_action :validate_params!
 2. DSL 写的是 `query :page, Integer`
 3. 结果是 `px[:page] == "2"`
 
+这个 hook 可以安全地写在 base controller 上。如果当前 action 没有匹配的 `doc`，ActionSpec 会跳过校验，并返回一个空的 `px`。
+
 #### `validate_and_coerce_params!`
 
 校验后再做类型转换：
@@ -430,96 +467,84 @@ before_action :validate_and_coerce_params!
 2. DSL 写的是 `query :page, Integer`
 3. 结果是 `px[:page] == 2`
 
-### `px` 怎么用
+这个 hook 也会自动跳过没有匹配 `doc` 的 action，因此放在共享 base controller 上也是安全的。
 
-`px` 就是一个 hash。
+### `px` 里的值怎么读
+
+`px` 里存的是 ActionSpec 处理后的值。使用 `validate_params!` 时会保留原始值；使用 `validate_and_coerce_params!` 时则是转换后的值。
 
 ```ruby
 px[:id]
 px[:page]
 px[:profile][:nickname]
 px.to_h
+px.scope[:user]
 ```
 
-它也会保留分组视图：
+分组视图统一放在 `px.scope` 下面：
 
 ```ruby
-px[:path]
-px[:query]
-px[:body]
-px[:headers]
-px[:cookies]
+px.scope[:path]
+px.scope[:query]
+px.scope[:body]
+px.scope[:headers]
+px.scope[:cookies]
 ```
 
 说明：
 
-1. path/query/body 的字段也会被铺平到 `px[:field]`
-2. header key 内部会按小写 dashed 形式存储，但读取时兼容 `Authorization`、`HTTP_AUTHORIZATION` 这类原始写法，例如：
+1. 所有声明在 path/query/body 上的字段，都会同时铺平到顶层 `px[:field]`
+2. `scope(:name)` 定义的自定义分组也会出现在 `px.scope[:name]`
+3. header 和 cookie 不会作为顶层快捷 key 暴露；例如 `px[:Authorization]` 不能直接读取 header
+4. header key 内部会按小写 dashed 形式存储，但读取时兼容 `Authorization`、`HTTP_AUTHORIZATION` 这类原始写法，例如：
    ```ruby
-   px[:headers][:authorization]
-   px[:headers]["Authorization"]
-   px[:headers]["HTTP_AUTHORIZATION"]
+   px.scope[:headers][:authorization]
+   px.scope[:headers]["Authorization"]
+   px.scope[:headers]["HTTP_AUTHORIZATION"]
    ```
-3. 原始 `params` 不会被回写修改
+5. 原始 `params` 不会被回写修改
 
 ### 错误处理
 
 校验错误会进入 `ActiveModel::Errors`。
 
-如果你关闭默认 rescue，则会抛出 `ActionSpec::InvalidParameters`：
+校验失败时，ActionSpec 会抛出 `ActionSpec::InvalidParameters`：
 
 ```ruby
 begin
   validate_and_coerce_params!
 rescue ActionSpec::InvalidParameters => error
+  error.message
   error.errors.full_messages
 end
 ```
 
 异常对象上也保留了完整结果，可通过 `error.result` 或 `error.parameters` 访问。
+ActionSpec 不会帮你渲染默认错误响应，这样每个应用都可以自行决定自己的 rescue 方式和返回格式。
 
-### 默认 `rescue_from`
+`error.message` 来自 `error.errors.full_messages.to_sentence`，所以会沿用 `ActiveModel::Errors` 的自然语言格式：
 
-默认情况下，如果 controller 里抛出了 `ActionSpec::InvalidParameters`，ActionSpec 会自动捕获这个异常，并返回一份 JSON 错误响应：
+1. 单个错误：`"Page is required"`
+2. 多个错误：`"Page is required and Birthday must be a valid date"`
+3. 如果没有可用的详细错误，则回退为：`"Invalid parameters"`
 
-```ruby
-rescue_from ActionSpec::InvalidParameters
-```
-
-默认响应：
-
-```json
-{
-  "errors": {
-    "page": ["Page is required"]
-  }
-}
-```
+如果你需要结构化错误详情，用 `error.errors`；如果你只需要一条汇总字符串，用 `error.message`。
 
 ## 配置和 I18n
 
 ### 配置
 
 ```ruby
-ActionSpec.configure do |config|
-  config.rescue_invalid_parameters = true
-  config.invalid_parameters_status = :bad_request
+ActionSpec.configure { |config|
   config.open_api_output = "docs/openapi.yml"
   config.open_api_title = "My API"
   config.open_api_version = "2026.03"
   config.open_api_server_url = "https://api.example.com"
 
-  config.error_messages[:invalid_type] = ->(_attribute, options) do
+  config.error_messages[:invalid_type] = ->(_attribute, options) {
     "should be coercible to #{options.fetch(:expected)}"
-  end
-
-  config.invalid_parameters_renderer = ->(controller, error) do
-    controller.render json: {
-      code: "invalid_parameters",
-      errors: error.errors.to_hash(full_messages: true)
-    }, status: :unprocessable_entity
-  end
-end
+  }
+}
 ```
 
 当前可配置项：
@@ -528,35 +553,23 @@ end
    默认值：`ActionSpec::InvalidParameters`。
    用来指定校验失败时抛出的异常类型。
 
-2. `invalid_parameters_status`
-   默认值：`:bad_request`。
-   用来指定内置 `rescue_from` 渲染器返回的 HTTP 状态码。
-
-3. `rescue_invalid_parameters`
-   默认值：`true`。
-   开启后，controller 会使用默认的 `rescue_from ActionSpec::InvalidParameters` 处理逻辑。
-
-4. `invalid_parameters_renderer`
-   默认值：`nil`。
-   用来自定义校验失败时的响应渲染逻辑。可以是接收 `(controller, error)` 的 proc，也可以是运行在 controller 上下文中的 block。
-
-5. `error_messages`
+2. `error_messages`
    默认值：`{}`。
    用来按错误类型，或者按“字段 + 错误类型”的粒度覆写错误消息。
 
-6. `open_api_output`
+3. `open_api_output`
    默认值：`"docs/openapi.yml"`。
    用来指定 `bin/rails action_spec:gen` 生成文档时的默认输出路径。
 
-7. `open_api_title`
+4. `open_api_title`
    默认值：`nil`。
    用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.title`。
 
-8. `open_api_version`
+5. `open_api_version`
    默认值：`nil`。
    用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.version`。
 
-9. `open_api_server_url`
+6. `open_api_server_url`
    默认值：`nil`。
    用来指定生成文档里的默认 server URL。
 
@@ -579,13 +592,13 @@ en:
 你也可以直接在 Ruby 里按错误类型或字段覆写消息：
 
 ```ruby
-ActionSpec.configure do |config|
+ActionSpec.configure { |config|
   config.error_messages[:required] = "must be present"
   config.error_messages[:invalid_type] = ->(_attribute, options) { "must be a valid #{options.fetch(:expected)}" }
   config.error_messages[:page] = {
     required: "page is mandatory"
   }
-end
+}
 ```
 
 ## 当前还没实现的部分
@@ -610,7 +623,8 @@ end
 18. 超出当前子集的更多 schema 关键字支持，包括 nullable / blank 语义、对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
 
 ## 贡献
-.
+
+欢迎提交贡献或问题。
 
 ## 许可
 本项目以开源方式发布，遵循 [MIT License](https://opensource.org/licenses/MIT)。
