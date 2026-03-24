@@ -1,0 +1,6 @@
+en:
+  activemodel:
+    errors:
+      messages:
+        required: "is required"
+        invalid_type: "must be a valid %{expected}"
