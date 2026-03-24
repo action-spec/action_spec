@@ -8,6 +8,8 @@ module ActionSpec
     extend ActiveSupport::Concern
 
     class_methods do
+      DryEntry = Struct.new(:block, :options, keyword_init: true)
+
       def action_specs
         @action_specs ||= begin
           parent = superclass.respond_to?(:action_specs) ? superclass.action_specs : {}
@@ -18,20 +20,24 @@ module ActionSpec
       def dry_blocks
         @dry_blocks ||= begin
           parent = superclass.respond_to?(:dry_blocks) ? superclass.dry_blocks : {}
-          parent.transform_values { |blocks| blocks.map(&:dup) }
+          parent.transform_values do |entries|
+            entries.map { |entry| DryEntry.new(block: entry.block, options: entry.options.deep_dup) }
+          end
         end
       end
 
       def doc(action_or_summary = nil, summary = nil, **options, &block)
         action_name, endpoint_summary = normalize_doc_arguments(action_or_summary, summary)
         action_name ||= infer_action_name(caller_locations(1, 1).first)
-        endpoint = Endpoint.new(action_name, summary: endpoint_summary, options:)
-        action_specs[action_name.to_sym] = apply_dry_blocks(endpoint).apply(block || proc {})
+        endpoint = Endpoint.new(action_name, summary: endpoint_summary, options: {})
+        endpoint = apply_dry_blocks(endpoint)
+        endpoint.options.merge!(options)
+        action_specs[action_name.to_sym] = endpoint.apply(block || proc {})
       end
 
-      def doc_dry(actions = :all, &block)
+      def doc_dry(actions = :all, **options, &block)
         Array(actions).each do |action|
-          (dry_blocks[action.to_sym] ||= []) << block
+          (dry_blocks[action.to_sym] ||= []) << DryEntry.new(block:, options:)
         end
       end
       alias api_dry doc_dry
@@ -49,8 +55,9 @@ module ActionSpec
         end
 
         def apply_dry_blocks(endpoint)
-          [*dry_blocks[:all], *dry_blocks[endpoint.action]].compact.each do |dry_block|
-            endpoint.apply(dry_block)
+          [*dry_blocks[:all], *dry_blocks[endpoint.action]].compact.each do |entry|
+            endpoint.options.merge!(entry.options)
+            endpoint.apply(entry.block) if entry.block
           end
           endpoint
         end

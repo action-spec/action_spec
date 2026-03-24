@@ -14,7 +14,9 @@ Concise and Powerful API Documentation Solution for Rails.
 2. [Doc DSL](#doc-dsl)
    1. [`doc`](#doc)
    2. [`doc_dry`](#doc_dry)
-   3. [DSL 详细说明](#dsl-详细说明)
+   3. [`openapi false`](#openapi-false)
+   4. [`tag`](#tag)
+   5. [DSL 详细说明](#dsl-详细说明)
 3. [Schemas](#schemas)
    1. [声明一个字段为必填项](#1-声明一个字段为必填项)
    2. [字段类型](#2-字段类型)
@@ -28,6 +30,7 @@ Concise and Powerful API Documentation Solution for Rails.
 5. [配置和 I18n](#配置和-i18n)
    1. [配置](#配置)
    2. [I18n](#i18n)
+6. [AI 生成风格指导](#ai-生成风格指导)
 
 ## 示例
 
@@ -163,11 +166,25 @@ end
 
 对应 action 的 dry 声明会先应用，再应用当前 `doc` 自己的声明。
 
+### `openapi false`
+
 如果你希望某个 action 不进入 OpenAPI 文档，也可以在 `doc` 或 `doc_dry` 中这样写：
 
 ```ruby
 doc {
   openapi false
+}
+```
+
+### `tag`
+
+OpenAPI tag 默认使用路由对应的 `controller_path`，也可以通过 `doc(tag:)` 或 `doc_dry(tag:)` 覆盖。
+
+```ruby
+doc_dry(:index, tag: "backoffice")
+
+doc("用户列表", tag: "members") {
+  query :status, String
 }
 ```
 
@@ -472,6 +489,7 @@ before_action :validate_and_coerce_params!
 ### `px` 里的值怎么读
 
 `px` 里存的是 ActionSpec 处理后的值。使用 `validate_params!` 时会保留原始值；使用 `validate_and_coerce_params!` 时则是转换后的值。
+这也意味着你可以继续使用 `px.slice(...)` 这类 hash 方法，来简化参数取值代码。
 
 ```ruby
 px[:id]
@@ -601,11 +619,23 @@ ActionSpec.configure { |config|
 }
 ```
 
+## AI 生成风格指导
+
+当你使用 AI 生成 Rails controller 代码，并且涉及参数校验、参数类型转换、参数默认值等情况时，下面这些约定更适合配合 ActionSpec：
+
+1. 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行。
+2. `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`。
+3. 对于批量声明的参数，在数量小于等于 3 个，并且没有 hash 嵌套时，优先写成一行，例如：
+   - `json data: { type: String, required: true }`
+   - `in_query(name: String, value: String)`（优先使用 `in_xxx(...)` 这类批量声明，而不是拆成多行 `xx` DSL）
+4. 优先使用 `doc_dry`、`scope` 和 `px.slice` 来减少 controller 里的重复代码。
+5. 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码。
+
 ## 当前还没实现的部分
 
 1. 可复用的 `components` 生成
 2. `$ref` 生成与去重
-3. operation 上的 `description`、`operationId`、`tags`、`externalDocs`、`deprecated`、`security`
+3. operation 上的 `description`、`operationId`、`externalDocs`、`deprecated`、`security`
 4. parameter 上的 `style`、`explode`、`allowReserved`、`examples`，以及更完整的 header / cookie 序列化控制
 5. request body 的 `encoding`
 6. 除当前 DSL 直接映射之外的更多 request / response media type

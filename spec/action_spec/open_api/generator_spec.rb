@@ -56,6 +56,8 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     operation = document.dig("paths", "/accounts/{account_id}/users", "post")
 
     expect(operation.fetch("summary")).to eq("Create user")
+    expect(operation.fetch("operationId")).to eq("users_create")
+    expect(operation.fetch("tags")).to eq(["users"])
     expect(operation.fetch("parameters")).to include(
       include(
         "name" => "account_id",
@@ -146,6 +148,97 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     expect(operation.fetch("responses")).to eq("200" => { "description" => "OK" })
   end
 
+  it "uses doc(tag:) to override the default controller_path tag" do
+    stub_const("AuctionsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:index, "List auctions", tag: "marketplace") do
+        query :status, String
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/auctions",
+          defaults: { controller: "auctions", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    operation = document.dig("paths", "/auctions", "get")
+
+    expect(operation.fetch("operationId")).to eq("marketplace_index")
+    expect(operation.fetch("tags")).to eq(["marketplace"])
+  end
+
+  it "uses doc_dry(tag:) to set tags for matching actions" do
+    stub_const("Admin::OrdersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc_dry :index, tag: "backoffice"
+
+      doc(:index, "List orders") do
+        query :status, String
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/admin/orders",
+          defaults: { controller: "admin/orders", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    operation = document.dig("paths", "/admin/orders", "get")
+
+    expect(operation.fetch("operationId")).to eq("backoffice_index")
+    expect(operation.fetch("tags")).to eq(["backoffice"])
+  end
+
+  it "lets doc(tag:) override a tag inherited from doc_dry(tag:)" do
+    stub_const("Admin::UsersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc_dry :index, tag: "backoffice"
+
+      doc(:index, "List users", tag: "members") do
+        query :status, String
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/admin/users",
+          defaults: { controller: "admin/users", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    operation = document.dig("paths", "/admin/users", "get")
+
+    expect(operation.fetch("operationId")).to eq("members_index")
+    expect(operation.fetch("tags")).to eq(["members"])
+  end
+
   it "skips endpoints marked with openapi false inside doc" do
     stub_const("InternalUsersController", Class.new(ActionController::Base) do
       include ActionSpec::Doc
@@ -231,9 +324,54 @@ RSpec.describe ActionSpec::OpenApi::Generator do
       )
 
       expect(File).to exist(output)
+      yaml = File.read(output)
+
+      expect(yaml).not_to include("!omap")
+      expect(yaml).to include("/profiles/{id}:")
+      expect(yaml).not_to include("\"/profiles/{id}\":")
       content = YAML.safe_load_file(output)
 
       expect(content.dig("paths", "/profiles/{id}", "get", "summary")).to eq("Show profile")
+    end
+  end
+
+  it "omits defaults and examples that are not JSON-compatible OpenAPI values" do
+    stub_const("MetricsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create metric") do
+        query :ratio, BigDecimal, default: BigDecimal("0.6"), example: BigDecimal("0.7"), examples: [BigDecimal("0.8")]
+      end
+
+      def create; end
+    end)
+
+    Dir.mktmpdir do |dir|
+      output = File.join(dir, "openapi.yml")
+
+      described_class.generate!(
+        routes: [
+          Route.new(
+            verb: "POST",
+            path: "/metrics",
+            defaults: { controller: "metrics", action: "create" }
+          )
+        ],
+        title: "ActionSpec Demo",
+        version: "2026.03",
+        output:
+      )
+
+      content = File.read(output)
+      document = YAML.safe_load_file(output)
+      ratio_schema = document.dig("paths", "/metrics", "post", "parameters", 0, "schema")
+
+      expect(content).not_to include("!ruby/object:BigDecimal")
+      expect(content).not_to match(/\n\s+default:\s*\n/)
+      expect(content).not_to match(/\n\s+example:\s*\n/)
+      expect(content).not_to match(/\n\s+examples:\s*\n/)
+      expect(ratio_schema).to include("type" => "number", "format" => "double")
+      expect(ratio_schema.keys).not_to include("default", "example", "examples")
     end
   end
 

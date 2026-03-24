@@ -8,8 +8,25 @@ module ActionSpec
           document = new(application:, routes:, title:, version:, server_url:).call
 
           FileUtils.mkdir_p(File.dirname(output))
-          File.write(output, YAML.dump(document))
+          File.write(output, pretty_yaml(plain_data(document)))
         end
+
+        private
+
+          def pretty_yaml(document)
+            YAML.dump(document).gsub(/^(\s*)"\/([^"]+)":$/, '\1/\2:')
+          end
+
+          def plain_data(value)
+            case value
+            when Array
+              value.map { |item| plain_data(item) }
+            when Hash
+              value.each_with_object({}) { |(key, item), hash| hash[key] = plain_data(item) }
+            else
+              value
+            end
+          end
       end
 
       def initialize(application: nil, routes: nil, title: nil, version: nil, server_url: nil)
@@ -55,7 +72,7 @@ module ActionSpec
 
             hash[path] ||= ActiveSupport::OrderedHash.new
             route_verbs(route).each do |verb|
-              hash[path][verb] = Operation.new(endpoint).build
+              hash[path][verb] = Operation.new(endpoint, controller_path: controller.controller_path).build
             end
           end
         end

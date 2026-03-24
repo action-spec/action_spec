@@ -17,25 +17,34 @@ RSpec.describe "action_spec:gen task" do
     Rake.application = original_rake
   end
 
+  it "is registered through the Railtie rake_tasks hook" do
+    ActionSpec::Railtie.instance.send(:run_tasks_blocks, nil)
+
+    expect(Rake::Task.task_defined?("action_spec:gen")).to eq(true)
+  end
+
   it "delegates to the OpenAPI generator with the default output path" do
     load File.expand_path("../../../lib/tasks/action_spec_tasks.rake", __dir__)
 
     application = instance_double("Rails::Application")
     root = Pathname.new("/tmp/action-spec-app")
+    output = root.join("docs", "openapi.yml").to_s
 
     allow(Rails).to receive(:application).and_return(application)
     allow(Rails).to receive(:root).and_return(root)
     allow(ActionSpec::OpenApi::Generator).to receive(:generate!)
+    allow($stdout).to receive(:puts)
 
     Rake::Task["action_spec:gen"].invoke
 
     expect(ActionSpec::OpenApi::Generator).to have_received(:generate!).with(
       application:,
-      output: root.join("docs", "openapi.yml").to_s,
+      output:,
       title: nil,
       version: nil,
       server_url: nil
     )
+    expect($stdout).to have_received(:puts).with("Generated OpenAPI document: #{output}")
   end
 
   it "uses ActionSpec configuration values when present" do

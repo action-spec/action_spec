@@ -14,6 +14,8 @@ Concise and Powerful API Documentation Solution for Rails.
 - [Doc DSL](#doc-dsl)
   - [`doc`](#doc)
   - [`doc_dry`](#doc_dry)
+  - [`openapi false`](#openapi-false)
+  - [`tag`](#tag)
   - [DSL Reference](#dsl-reference)
 - [Schemas](#schemas)
   - [Declare A Required Field](#declare-a-required-field)
@@ -28,6 +30,7 @@ Concise and Powerful API Documentation Solution for Rails.
 - [Configuration And I18n](#configuration-and-i18n)
   - [Configuration](#configuration)
   - [I18n](#i18n)
+- [AI Generation Style Guide](#ai-generation-style-guide)
 
 ## Example
 
@@ -163,6 +166,8 @@ end
 
 All matching dry blocks are applied before the action-specific `doc`.
 
+### `openapi false`
+
 You can also opt an action out of OpenAPI generation from either `doc` or `doc_dry`:
 
 ```ruby
@@ -170,6 +175,20 @@ doc {
   openapi false
 }
 ```
+
+### `tag`
+
+OpenAPI tags can also be set at either level:
+
+```ruby
+doc_dry(:index, tag: "backoffice")
+
+doc("List users", tag: "members") {
+  query :status, String
+}
+```
+
+Generated OpenAPI operations also include an `operationId`, built from the final tag plus the action name, for example `members_index` or `users_create`.
 
 ### DSL Reference
 
@@ -465,6 +484,7 @@ This hook also skips actions without a matching `doc`, so it is safe to declare 
 ### Reading Processed Values With `px`
 
 `px` stores the processed values produced by ActionSpec. With `validate_params!` they stay raw; with `validate_and_coerce_params!` they are coerced values.
+Because `px` is still a hash, you can also use helpers such as `px.slice(...)` to simplify parameter access code.
 
 ```ruby
 px[:id]
@@ -596,11 +616,23 @@ ActionSpec.configure { |config|
 }
 ```
 
+## AI Generation Style Guide
+
+When using AI tools to generate Rails controller code, and the change involves parameter validation, type coercion, default values, or similar parameter contracts, these conventions work well with ActionSpec:
+
+- use `doc { }` or `doc("Summary") { }`; do not add the action name, and do not leave a blank line between the `doc` block and the action method
+- use `{ }` blocks inside `doc` as well; prefer them over `do ... end`
+- when a batch has 3 fields or fewer and does not contain nested hashes, prefer a single-line style, for example:
+  - `json data: { type: String, required: true }`
+  - `in_query(name: String, value: String)` (prefer `in_xxx(...)` batch declarations over multiple `xx` DSL lines when possible)
+- use `doc_dry`, `scope`, and `px.slice` to reduce repetition in controllers
+- when request parameters match model declarations, prefer `.schemas` to keep `doc` concise
+
 ## What Is Not Implemented Yet
 
 - reusable `components` generation
 - `$ref` generation and deduplication
-- `description`, `operationId`, `tags`, `externalDocs`, `deprecated`, and `security` on operations
+- `description`, `externalDocs`, `deprecated`, and `security` on operations
 - parameter-level `style`, `explode`, `allowReserved`, `examples`, and richer header/cookie serialization controls
 - request body `encoding`
 - multiple request/response media types beyond the current direct DSL mapping

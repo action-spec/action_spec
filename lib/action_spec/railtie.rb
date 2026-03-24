@@ -1,5 +1,9 @@
 module ActionSpec
   class Railtie < ::Rails::Railtie
+    rake_tasks do
+      load File.expand_path("../tasks/action_spec_tasks.rake", __dir__)
+    end
+
     initializer "action_spec.controller" do
       ActiveSupport.on_load(:action_controller_base) do
         include ActionSpec::Doc

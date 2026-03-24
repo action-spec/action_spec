@@ -105,14 +105,21 @@ module ActionSpec
 
         def apply_common_options(definition, schema)
           definition["description"] = schema.description if schema.description.present?
-          definition["default"] = schema.default unless schema.default.respond_to?(:call) || schema.default.nil?
+          apply_literal_option(definition, "default", schema.default) unless schema.default.respond_to?(:call)
           definition["enum"] = schema.enum if schema.enum.present?
           definition["pattern"] = regex_source(schema.pattern) if schema.pattern.present?
           apply_length(definition, schema.length, definition["type"])
-          definition["example"] = schema.example if schema.example.present?
-          definition["examples"] = schema.examples if schema.examples.present?
+          apply_literal_option(definition, "example", schema.example)
+          apply_literal_option(definition, "examples", schema.examples)
           apply_range(definition, schema.range)
           definition
+        end
+
+        def apply_literal_option(definition, key, value)
+          normalized = openapi_literal(value)
+          return if normalized.nil? || normalized.equal?(invalid_openapi_literal)
+
+          definition[key] = normalized
         end
 
         def apply_range(definition, range)
@@ -165,6 +172,31 @@ module ActionSpec
 
         def regex_source(pattern)
           pattern.is_a?(Regexp) ? pattern.source : pattern.to_s
+        end
+
+        def openapi_literal(value)
+          case value
+          when nil, String, Integer, Float, TrueClass, FalseClass
+            value
+          when Array
+            normalized = value.map { |item| openapi_literal(item) }
+            return invalid_openapi_literal if normalized.any? { |item| item.equal?(invalid_openapi_literal) }
+
+            normalized
+          when Hash
+            value.each_with_object(ActiveSupport::OrderedHash.new) do |(key, item), normalized|
+              item = openapi_literal(item)
+              return invalid_openapi_literal if item.equal?(invalid_openapi_literal)
+
+              normalized[key.to_s] = item
+            end
+          else
+            invalid_openapi_literal
+          end
+        end
+
+        def invalid_openapi_literal
+          @invalid_openapi_literal ||= Object.new.freeze
         end
     end
   end
