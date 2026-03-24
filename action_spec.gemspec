@@ -10,13 +10,13 @@ Gem::Specification.new do |spec|
   # spec.metadata["allowed_push_host"] = ""
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = "https://github.com/action-spec/action_spec"
-  spec.metadata["changelog_uri"] = "https://github.com/action-spec/action_spec/CHANils."
-  spec.description = "Concise and Powerful API Documentation Solution for Rails."
+  spec.metadata["source_code_uri"] = "#{spec.homepage}/tree/main"
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/releases"
+  spec.description = "A concise Rails DSL for declaring API request and response schemas."
   spec.license     = "MIT"
 
   # Prevent pushing this gem to RubyGems.org. To allow pushes either set the "allowed_push_host"
-  # to allow pushing to a single host or delete this section to alGELOG.md"
+  # to allow pushing to a single host or delete this section to allow pushing to any host.
 
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
     Dir["{app,config,db,lib}/**/*", "MIT-LICENSE", "Rakefile", "README.md"]

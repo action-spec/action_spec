@@ -562,7 +562,7 @@ end
 
 ### I18n
 
-ActionSpec 会加载自己的 locale，并基于 `ActiveModel::Errors` 工作，所以你可以覆写消息和字段名：
+ActionSpec 基于 `ActiveModel::Errors` 工作，所以你可以覆写消息和字段名：
 
 ```yml
 en:

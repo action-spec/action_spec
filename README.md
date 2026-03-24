@@ -557,7 +557,7 @@ Available config keys:
 
 ### I18n
 
-ActionSpec loads its own locale files and uses `ActiveModel::Errors`, so you can override both messages and attribute names:
+ActionSpec uses `ActiveModel::Errors`, so you can override both messages and attribute names:
 
 ```yml
 en:
