@@ -3,7 +3,7 @@
 module ActionSpec
   module Schema
     class Base
-      attr_reader :default, :enum, :range, :pattern, :allow_nil, :allow_blank, :description, :example, :examples
+      attr_reader :default, :enum, :range, :pattern, :length, :allow_nil, :allow_blank, :description, :example, :examples
 
       def initialize(options = {})
         options = options.symbolize_keys
@@ -11,6 +11,7 @@ module ActionSpec
         @enum = options[:enum]
         @range = options[:range]
         @pattern = options[:pattern]
+        @length = options[:length]
         @allow_nil = options[:allow_nil]
         @allow_blank = options[:allow_blank]
         @description = options[:desc] || options[:description]

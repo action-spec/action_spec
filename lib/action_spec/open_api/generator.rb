@@ -53,7 +53,9 @@ module ActionSpec
             next if path.blank?
 
             hash[path] ||= ActiveSupport::OrderedHash.new
-            hash[path][route_verb(route)] = Operation.new(endpoint).build
+            route_verbs(route).each do |verb|
+              hash[path][verb] = Operation.new(endpoint).build
+            end
           end
         end
 
@@ -87,7 +89,7 @@ module ActionSpec
           defaults.to_h.symbolize_keys
         end
 
-        def route_verb(route)
+        def route_verbs(route)
           raw_verb =
             if route.respond_to?(:verb) && route.verb.respond_to?(:source)
               route.verb.source
@@ -97,7 +99,7 @@ module ActionSpec
               route[:verb].to_s
             end
 
-          raw_verb.gsub(/[$^]/, "").split("|").find(&:present?).to_s.downcase
+          raw_verb.gsub(/[$^]/, "").split("|").filter_map { |verb| verb.presence&.downcase }
         end
 
         def normalized_path(route)

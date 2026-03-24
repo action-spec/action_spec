@@ -5,13 +5,14 @@ require "action_spec/schema/field"
 require "action_spec/schema/scalar"
 require "action_spec/schema/object_of"
 require "action_spec/schema/array_of"
+require "action_spec/schema/active_record"
 require "action_spec/schema/resolver"
 require "action_spec/schema/type_caster"
 
 module ActionSpec
   module Schema
     Missing = Object.new.freeze
-    OPTION_KEYS = %i[default desc enum range pattern allow_nil allow_blank example examples].freeze
+    OPTION_KEYS = %i[default desc enum range pattern length allow_nil allow_blank example examples].freeze
 
     class << self
       def build(type = nil, **options)

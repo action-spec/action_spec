@@ -6,7 +6,7 @@ Concise and Powerful API Documentation Solution for Rails.
 
 - OpenAPI 版本: `v3.2.0`
 - 要求: Ruby 3.1+ 和 Rails 7.0+
-- 注意：本项目使用 Codex 花费一个小时实现，尚未人工 review，未在生产环境验证过。（但是已驱使 Codex 生成了比较详细的 Rspec 测试）
+- 注意：本项目使用 Codex 花费两个小时实现，尚未人工 review，未在生产环境验证过。（但是已驱使 Codex 生成了比较详细的 Rspec 测试）
 
 ## 目录
 
@@ -16,10 +16,11 @@ Concise and Powerful API Documentation Solution for Rails.
    2. [`doc_dry`](#doc_dry)
    3. [DSL 详细说明](#dsl-详细说明)
 3. [Schemas](#schemas)
-   1. [必填字段](#必填字段)
-   2. [当前支持的运行时类型](#当前支持的运行时类型)
-   3. [类型与边界矩阵](#类型与边界矩阵)
-   4. [当前已生效的运行时选项](#当前已生效的运行时选项)
+   1. [声明一个字段为必填项](#1-声明一个字段为必填项)
+   2. [字段类型](#2-字段类型)
+   3. [字段选项](#3-字段选项)
+   4. [从 ActiveRecord 生成 Schemas](#4-从-activerecord-生成-schemas)
+   5. [类型与边界矩阵](#5-类型与边界矩阵)
 4. [参数验证和类型转换](#参数验证和类型转换)
    1. [参数处理流程](#参数处理流程)
    2. [`px` 怎么用](#px-怎么用)
@@ -253,7 +254,7 @@ error 401, "unauthorized"
 
 ## Schemas
 
-#### 1. 必填字段
+#### 1. 声明一个字段为必填项
 
 可以写在参数方法上：
 
@@ -278,7 +279,7 @@ json data: {
 2. `name!:`、`nickname!:` 这种写法表示嵌套对象里的字段必填。
 3. `body!`、`json!`、`form!` 目前是为了保持 DSL 一致性；在当前运行时行为里，它们和不带 `!` 的版本等价。
 
-#### 2. 当前支持的运行时类型
+#### 2. 字段类型
 
 当前 validator/coercer 已支持：
 
@@ -301,28 +302,14 @@ json data: {
   profile: {
     nickname!: String
   },
-  settings: { type: Object }
+  settings: { type: Object },
+  users: [{ id: Integer }]
 }
 ```
 
-#### 3. 类型与边界矩阵
+#### 3. 字段选项
 
-| 类型 | 可接受输入示例 | 拒绝输入 / 说明 |
-| --- | --- | --- |
-| `String` | `12`、`true`、`""` | 遵循 `ActiveModel::Type::String`，所以 `true` 会变成 `"t"` |
-| `Integer` | `"0"`、`"-12"`、`"+7"`、`12` | 拒绝 `"12.3"`、`"abc"`、`""` |
-| `Float` | `"0"`、`"-12.5"`、`12`、`12.5` | 拒绝 `"12.3.4"`、`"abc"` |
-| `BigDecimal` | `"0"`、`"-12.50"`、`12`、`12.5` | 拒绝 `"abc"` |
-| `:boolean` / 宿主项目自带的 `Boolean` | `true`、`false`、`"1"`、`"0"`、`"true"`、`"false"`、`"yes"`、`"no"`、`"on"`、`"off"` | 拒绝含糊值，例如 `""`、`"2"`、`"TRUE "`、`"maybe"` |
-| `Date` | `"2025-10-17"` | 拒绝非法日期，例如 `"2025-02-30"` |
-| `DateTime` | `"2025-10-17T12:30:00Z"` | 拒绝非法时间，例如 `"2025-10-17 25:00:00"` |
-| `Time` | `"2025-10-17T12:30:00Z"` | 遵循 `ActiveModel::Type::Time`，日期部分会变成 `2000-01-01` |
-| `File` | `ActionDispatch::Http::UploadedFile`、`Tempfile`、类文件 IO 对象 | 保留原对象，不会把文件内容读进内存 |
-| `Object` | `Hash`、`ActionController::Parameters`、任意 Ruby 对象 | 作为标量 `Object` 时原样透传；嵌套 hash 会按对象 schema 递归解析 |
-| `[Type]` | 比如 `[Integer]` 接收 `%w[1 2 3]` | 非数组会报错，数组项错误会记录成 `tags.1` 这种路径 |
-| 嵌套对象 | `{ profile: { nickname: "neo" } }` | 非 hash 会报错，嵌套字段错误会记录成 `profile.nickname` |
-
-#### 4. 当前已生效的运行时选项
+这些选项当前会参与运行时校验：
 
 ```ruby
 query :page, Integer, default: 1
@@ -332,13 +319,84 @@ query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 ```
 
-这些选项当前会作为元数据保存下来，但运行时暂未实际使用：
+这些选项当前已经用于 OpenAPI 文档生成，但运行时暂未实际使用：
 
 1. `desc`
 2. `example`
 3. `examples`
+
+这些选项目前在运行时校验和 OpenAPI 文档生成里都还没有实际使用：
+
 4. `allow_nil`
 5. `allow_blank`
+
+#### 4. 从 ActiveRecord 生成 Schemas
+
+如果模型是 `ActiveRecord::Base`，可以直接从模型导出一份可用于 ActionSpec DSL 的 schema hash：
+
+```ruby
+class UsersController < ApplicationController
+  doc {
+    form data: User.schemas
+  }
+  def create
+  end
+end
+```
+
+`User.schemas` 返回的就是一份可以直接传给 `form data:`、`json data:` 或 `body` 的 hash。
+
+默认会包含模型的全部字段：
+
+```ruby
+User.schemas
+```
+
+如果只想导出部分字段，可以使用 `only:`：
+
+```ruby
+User.schemas(only: %i[name phone role])
+```
+
+ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的信息，包括：
+
+1. 字段类型
+2. 必填状态，并输出成 `"name!"` 这样的 bang key
+3. `enum` 定义
+4. `default`
+5. 列注释对应的 `desc`
+6. format validator 对应的 `pattern`
+7. numericality validator 对应的 `range`
+8. length validator 和字符串列长度对应的 `length`
+
+输出示例：
+
+```ruby
+User.schemas
+# {
+#   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
+#   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   "role" => { type: String, enum: %w[admin member visitor] }
+# }
+```
+
+#### 5. 类型与边界矩阵
+
+| 类型 | 可接受输入示例 | 拒绝输入 / 说明 |
+| --- | --- | --- |
+| `String` | `12`、`true`、`""` | 遵循 `ActiveModel::Type::String`，所以 `true` 会变成 `"t"` |
+| `Integer` | `"0"`、`"-12"`、`"+7"`、`12` | 拒绝 `"12.3"`、`"abc"`、`""` |
+| `Float` | `"0"`、`"-12.5"`、`12`、`12.5` | 拒绝 `"12.3.4"`、`"abc"` |
+| `BigDecimal` | `"0"`、`"-12.50"`、`12`、`12.5` | 拒绝 `"abc"` |
+| `:boolean` / `Boolean` | `true`、`false`、`"1"`、`"0"`、`"true"`、`"false"`、`"yes"`、`"no"`、`"on"`、`"off"` | 拒绝含糊值，例如 `""`、`"2"`、`"TRUE "`、`"maybe"` |
+| `Date` | `"2025-10-17"` | 拒绝非法日期，例如 `"2025-02-30"` |
+| `DateTime` | `"2025-10-17T12:30:00Z"` | 拒绝非法时间，例如 `"2025-10-17 25:00:00"` |
+| `Time` | `"2025-10-17T12:30:00Z"` | 遵循 `ActiveModel::Type::Time`，日期部分会变成 `2000-01-01` |
+| `File` | `ActionDispatch::Http::UploadedFile`、`Tempfile`、类文件 IO 对象 | 保留原对象，不会把文件内容读进内存 |
+| `Object` | `Hash`、`ActionController::Parameters`、任意 Ruby 对象 | 作为标量 `Object` 时原样透传；嵌套 hash 会按对象 schema 递归解析 |
+| `[Type]` | 比如 `[Integer]` 接收 `%w[1 2 3]` | 非数组会报错，数组项错误会记录成 `tags.1` 这种路径 |
+| 嵌套对象 | `{ profile: { nickname: "neo" } }` | 非 hash 会报错，嵌套字段错误会记录成 `profile.nickname` |
+
 
 ## 参数验证和类型转换
 
@@ -530,12 +588,26 @@ ActionSpec.configure do |config|
 end
 ```
 
-### 当前还没实现的部分
+## 当前还没实现的部分
 
-1. OpenAPI 文档生成
-2. 基于 `response` 的自动响应渲染
-3. component / ref 体系
-4. `allow_nil` / `allow_blank` 的运行时行为
+1. 可复用的 `components` 生成
+2. `$ref` 生成与去重
+3. operation 上的 `description`、`operationId`、`tags`、`externalDocs`、`deprecated`、`security`
+4. parameter 上的 `style`、`explode`、`allowReserved`、`examples`，以及更完整的 header / cookie 序列化控制
+5. request body 的 `encoding`
+6. 除当前 DSL 直接映射之外的更多 request / response media type
+7. response body schema 生成；当前 `response` / `resp` / `error` 只会生成响应描述
+8. response headers
+9. response links
+10. callbacks
+11. webhooks
+12. path 级共享 parameters
+13. 顶层 `components.parameters`、`components.requestBodies`、`components.responses`、`components.headers`、`components.examples`、`components.links`、`components.callbacks`、`components.schemas`、`components.securitySchemes`、`components.pathItems`
+14. 顶层 `security`
+15. 顶层 `tags`
+16. 顶层 `externalDocs`
+17. `jsonSchemaDialect`
+18. 超出当前子集的更多 schema 关键字支持，包括 nullable / blank 语义、对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
 
 ## 贡献
 .

@@ -10,5 +10,11 @@ module ActionSpec
         include ActionSpec::Validator
       end
     end
+
+    initializer "action_spec.active_record" do
+      ActiveSupport.on_load(:active_record) do
+        include ActionSpec::Schema::ActiveRecord
+      end
+    end
   end
 end

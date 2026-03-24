@@ -212,4 +212,57 @@ RSpec.describe ActionSpec::OpenApi::Generator do
       "version" => "1.0.0"
     )
   end
+
+  it "resolves namespaced controllers from routed controller names" do
+    module Admin
+      class UsersController < ActionController::Base
+        include ActionSpec::Doc
+
+        doc(:index, "List admin users") { }
+
+        def index; end
+      end
+    end
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/admin/users",
+          defaults: { controller: "admin/users", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    expect(document.dig("paths", "/admin/users", "get", "summary")).to eq("List admin users")
+  end
+
+  it "emits every routed HTTP verb instead of keeping only the first one" do
+    stub_const("ProfilesController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:replace, "Replace profile") { }
+      doc(:update, "Update profile") { }
+
+      def replace; end
+      def update; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "PATCH|PUT",
+          path: "/profiles/:id",
+          defaults: { controller: "profiles", action: "update" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    expect(document.dig("paths", "/profiles/{id}", "patch", "summary")).to eq("Update profile")
+    expect(document.dig("paths", "/profiles/{id}", "put", "summary")).to eq("Update profile")
+  end
 end

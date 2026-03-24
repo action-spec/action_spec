@@ -6,6 +6,7 @@ require "tempfile"
 require "tmpdir"
 require "active_support"
 require "active_support/core_ext"
+require "active_record"
 require "action_controller/railtie"
 require "action_dispatch"
 

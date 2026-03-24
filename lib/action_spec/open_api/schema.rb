@@ -108,6 +108,7 @@ module ActionSpec
           definition["default"] = schema.default unless schema.default.respond_to?(:call) || schema.default.nil?
           definition["enum"] = schema.enum if schema.enum.present?
           definition["pattern"] = regex_source(schema.pattern) if schema.pattern.present?
+          apply_length(definition, schema.length, definition["type"])
           definition["example"] = schema.example if schema.example.present?
           definition["examples"] = schema.examples if schema.examples.present?
           apply_range(definition, schema.range)
@@ -122,6 +123,16 @@ module ActionSpec
           definition["exclusiveMinimum"] = rules[:gt] if rules.key?(:gt)
           definition["maximum"] = rules[:le] if rules.key?(:le)
           definition["exclusiveMaximum"] = rules[:lt] if rules.key?(:lt)
+        end
+
+        def apply_length(definition, length, type)
+          return if length.blank?
+
+          rules = length.symbolize_keys
+          return unless type == "string"
+
+          definition["minLength"] = rules[:minimum] if rules.key?(:minimum)
+          definition["maxLength"] = rules[:maximum] if rules.key?(:maximum)
         end
 
         def scalar_type(type)

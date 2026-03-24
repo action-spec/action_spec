@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    action_spec (0.1.0)
+    action_spec (1.0.0)
       rails (>= 7.0.0)
 
 GEM
@@ -223,7 +223,7 @@ DEPENDENCIES
   rspec-rails (>= 7.0, < 9.0)
 
 CHECKSUMS
-  action_spec (0.1.0)
+  action_spec (1.0.0)
   action_text-trix (2.1.17)
   actioncable (8.1.2)
   actionmailbox (8.1.2)

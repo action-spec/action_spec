@@ -6,7 +6,7 @@ Concise and Powerful API Documentation Solution for Rails.
 
 - OpenAPI version: `v3.2.0`
 - Requires: Ruby 3.1+ and Rails 7.0+
-- Note: this project was implemented with Codex in about one hour, has not yet been manually reviewed, and has not been validated in production. It does, however, come with fairly detailed RSpec tests generated with Codex.
+- Note: this project was implemented with Codex in about 2 hours, has not yet been manually reviewed, and has not been validated in production. It does, however, come with fairly detailed RSpec tests generated with Codex.
 
 ## Table Of Contents
 
@@ -16,10 +16,11 @@ Concise and Powerful API Documentation Solution for Rails.
   - [`doc_dry`](#doc_dry)
   - [DSL Reference](#dsl-reference)
 - [Schemas](#schemas)
-  - [Required Fields](#required-fields)
-  - [Supported Runtime Types](#supported-runtime-types)
+  - [Declare A Required Field](#declare-a-required-field)
+  - [Field Types](#field-types)
+  - [Field Options](#field-options)
+  - [Schemas From ActiveRecord](#schemas-from-activerecord)
   - [Type And Boundary Matrix](#type-and-boundary-matrix)
-  - [Supported Runtime Options](#supported-runtime-options)
 - [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
   - [Validation Flow](#validation-flow)
   - [Reading Validated Values With `px`](#reading-validated-values-with-px)
@@ -250,7 +251,7 @@ Response declarations are stored as metadata now. They are not yet used to rende
 
 ## Schemas
 
-#### Required Fields
+#### Declare A Required Field
 
 Use `!` in either place:
 
@@ -271,7 +272,7 @@ Meaning of `!`:
 - keys such as `name!:` or `nickname!:` mark nested object fields as required
 - `body!`, `json!`, and `form!` are currently accepted for DSL consistency, but today they behave the same as the non-bang form at runtime
 
-#### Supported Runtime Types
+#### Field Types
 
 Scalar types currently supported by validation/coercion:
 
@@ -294,28 +295,12 @@ json data: {
   profile: {
     nickname!: String
   },
-  settings: { type: Object }
+  settings: { type: Object },
+  users: [{ id: Integer }]
 }
 ```
 
-#### Type And Boundary Matrix
-
-| Type | Accepted examples | Rejected examples / notes |
-| --- | --- | --- |
-| `String` | `12`, `true`, `""` | Follows `ActiveModel::Type::String`, so `true` becomes `"t"` |
-| `Integer` | `"0"`, `"-12"`, `"+7"`, `12` | Rejects `"12.3"`, `"abc"`, `""` |
-| `Float` | `"0"`, `"-12.5"`, `12`, `12.5` | Rejects `"12.3.4"`, `"abc"` |
-| `BigDecimal` | `"0"`, `"-12.50"`, `12`, `12.5` | Rejects `"abc"` |
-| `:boolean` / host-defined `Boolean` | `true`, `false`, `"1"`, `"0"`, `"true"`, `"false"`, `"yes"`, `"no"`, `"on"`, `"off"` | Rejects ambiguous values such as `""`, `"2"`, `"TRUE "`, `"maybe"` |
-| `Date` | `"2025-10-17"` | Rejects invalid dates such as `"2025-02-30"` |
-| `DateTime` | `"2025-10-17T12:30:00Z"` | Rejects invalid datetimes such as `"2025-10-17 25:00:00"` |
-| `Time` | `"2025-10-17T12:30:00Z"` | Follows `ActiveModel::Type::Time`, so the date part becomes `2000-01-01` |
-| `File` | `ActionDispatch::Http::UploadedFile`, `Tempfile`, file-like IO objects | Keeps the object as-is and does not read file contents into memory |
-| `Object` | `Hash`, `ActionController::Parameters`, arbitrary Ruby objects | Passed through for scalar `Object`; nested hashes use object schema resolution |
-| `[Type]` | arrays such as `%w[1 2 3]` for `[Integer]` | Rejects non-array values, and reports item errors like `tags.1` |
-| nested object | `{ profile: { nickname: "neo" } }` | Rejects non-hash values, and reports nested paths like `profile.nickname` |
-
-#### Supported Runtime Options
+#### Field Options
 
 These options are currently used by the validator:
 
@@ -327,13 +312,84 @@ query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 ```
 
-These options are currently accepted as metadata, mainly for future OpenAPI work, but are not yet used by the runtime validator:
+These options are currently used by OpenAPI generation, but are not yet used by the runtime validator:
 
 - `desc`
 - `example`
 - `examples`
+
+These options are not yet used by either the runtime validator or OpenAPI generation:
+
 - `allow_nil`
 - `allow_blank`
+
+#### Schemas From ActiveRecord
+
+If your model is an `ActiveRecord::Base`, you can derive an ActionSpec-friendly schema hash directly from the model:
+
+```ruby
+class UsersController < ApplicationController
+  doc {
+    form data: User.schemas
+  }
+  def create
+  end
+end
+```
+
+`User.schemas` returns a hash that can be passed directly into `form data:`, `json data:`, or `body`.
+
+By default it includes all model fields:
+
+```ruby
+User.schemas
+```
+
+You can also limit the exported fields:
+
+```ruby
+User.schemas(only: %i[name phone role])
+```
+
+ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel when available, including:
+
+- field type
+- requiredness, rendered as bang keys such as `"name!"`
+- enum values from `enum`
+- `default`
+- `desc` from column comments
+- `pattern` from format validators
+- `range` from numericality validators
+- `length` from length validators and string column limits
+
+Example output:
+
+```ruby
+User.schemas
+# {
+#   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
+#   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   "role" => { type: String, enum: %w[admin member visitor] }
+# }
+```
+
+#### Type And Boundary Matrix
+
+| Type | Accepted examples | Rejected examples / notes |
+| --- | --- | --- |
+| `String` | `12`, `true`, `""` | Follows `ActiveModel::Type::String`, so `true` becomes `"t"` |
+| `Integer` | `"0"`, `"-12"`, `"+7"`, `12` | Rejects `"12.3"`, `"abc"`, `""` |
+| `Float` | `"0"`, `"-12.5"`, `12`, `12.5` | Rejects `"12.3.4"`, `"abc"` |
+| `BigDecimal` | `"0"`, `"-12.50"`, `12`, `12.5` | Rejects `"abc"` |
+| `:boolean` / `Boolean` | `true`, `false`, `"1"`, `"0"`, `"true"`, `"false"`, `"yes"`, `"no"`, `"on"`, `"off"` | Rejects ambiguous values such as `""`, `"2"`, `"TRUE "`, `"maybe"` |
+| `Date` | `"2025-10-17"` | Rejects invalid dates such as `"2025-02-30"` |
+| `DateTime` | `"2025-10-17T12:30:00Z"` | Rejects invalid datetimes such as `"2025-10-17 25:00:00"` |
+| `Time` | `"2025-10-17T12:30:00Z"` | Follows `ActiveModel::Type::Time`, so the date part becomes `2000-01-01` |
+| `File` | `ActionDispatch::Http::UploadedFile`, `Tempfile`, file-like IO objects | Keeps the object as-is and does not read file contents into memory |
+| `Object` | `Hash`, `ActionController::Parameters`, arbitrary Ruby objects | Passed through for scalar `Object`; nested hashes use object schema resolution |
+| `[Type]` | arrays such as `%w[1 2 3]` for `[Integer]` | Rejects non-array values, and reports item errors like `tags.1` |
+| nested object | `{ profile: { nickname: "neo" } }` | Rejects non-hash values, and reports nested paths like `profile.nickname` |
+
 
 ## Parameter Validation And Type Coercion
 
@@ -529,10 +585,24 @@ end
 
 ## What Is Not Implemented Yet
 
-- OpenAPI document generation
-- automatic response rendering from `response`
-- reusable schema/components system from `zero-rails_openapi`
-- runtime behavior for `allow_nil` / `allow_blank`
+- reusable `components` generation
+- `$ref` generation and deduplication
+- `description`, `operationId`, `tags`, `externalDocs`, `deprecated`, and `security` on operations
+- parameter-level `style`, `explode`, `allowReserved`, `examples`, and richer header/cookie serialization controls
+- request body `encoding`
+- multiple request/response media types beyond the current direct DSL mapping
+- response body schema generation; current `response` / `resp` / `error` declarations only generate response descriptions
+- response headers
+- response links
+- callbacks
+- webhooks
+- path-level shared parameters
+- top-level `components.parameters`, `components.requestBodies`, `components.responses`, `components.headers`, `components.examples`, `components.links`, `components.callbacks`, `components.schemas`, `components.securitySchemes`, and `components.pathItems`
+- top-level `security`
+- top-level `tags`
+- top-level `externalDocs`
+- `jsonSchemaDialect`
+- richer schema keywords beyond the current subset, including nullable/blank semantics, object-level constraints, and composition keywords such as `oneOf`, `anyOf`, `allOf`, and `not`
 
 ## Contributing
 .
