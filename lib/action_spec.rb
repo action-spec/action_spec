@@ -8,6 +8,7 @@ require "action_spec/validation_result"
 require "action_spec/invalid_parameters"
 require "action_spec/doc"
 require "action_spec/schema"
+require "action_spec/open_api"
 require "action_spec/validator"
 require "action_spec/railtie"
 

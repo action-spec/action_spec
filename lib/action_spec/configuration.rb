@@ -3,7 +3,8 @@
 module ActionSpec
   class Configuration
     attr_accessor :invalid_parameters_exception_class, :invalid_parameters_status, :rescue_invalid_parameters,
-                  :invalid_parameters_renderer
+                  :invalid_parameters_renderer, :open_api_output, :open_api_title, :open_api_version,
+                  :open_api_server_url
     attr_reader :error_messages
 
     def initialize
@@ -11,6 +12,10 @@ module ActionSpec
       @invalid_parameters_status = :bad_request
       @rescue_invalid_parameters = true
       @invalid_parameters_renderer = nil
+      @open_api_output = "docs/openapi.yml"
+      @open_api_title = nil
+      @open_api_version = nil
+      @open_api_server_url = nil
       @error_messages = ActiveSupport::HashWithIndifferentAccess.new
     end
 
@@ -31,6 +36,10 @@ module ActionSpec
         copy.invalid_parameters_status = invalid_parameters_status
         copy.rescue_invalid_parameters = rescue_invalid_parameters
         copy.invalid_parameters_renderer = invalid_parameters_renderer
+        copy.open_api_output = open_api_output
+        copy.open_api_title = open_api_title
+        copy.open_api_version = open_api_version
+        copy.open_api_server_url = open_api_server_url
         copy.error_messages = error_messages.deep_dup
       end
     end

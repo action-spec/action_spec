@@ -8,19 +8,28 @@ Concise and Powerful API Documentation Solution for Rails.
 - 要求: Ruby 3.1+ 和 Rails 7.0+
 - 注意：本项目使用 Codex 花费一个小时实现，尚未人工 review，未在生产环境验证过。（但是已驱使 Codex 生成了比较详细的 Rspec 测试）
 
-## 概览
+## 目录
 
-ActionSpec 把接口契约直接放在 controller action 旁边。它提供一套可读性很强的 DSL 来声明请求与响应结构，并提供运行时参数校验、类型转换与 `px` 输出。
+1. [OpenAPI 生成](#openapi-生成)
+2. [Doc DSL](#doc-dsl)
+   1. [`doc`](#doc)
+   2. [`doc_dry`](#doc_dry)
+   3. [DSL 详细说明](#dsl-详细说明)
+3. [Schemas](#schemas)
+   1. [必填字段](#必填字段)
+   2. [当前支持的运行时类型](#当前支持的运行时类型)
+   3. [类型与边界矩阵](#类型与边界矩阵)
+   4. [当前已生效的运行时选项](#当前已生效的运行时选项)
+4. [参数验证和类型转换](#参数验证和类型转换)
+   1. [参数处理流程](#参数处理流程)
+   2. [`px` 怎么用](#px-怎么用)
+   3. [错误处理](#错误处理)
+   4. [默认 `rescue_from`](#默认-rescue_from)
+5. [配置和 I18n](#配置和-i18n)
+   1. [配置](#配置)
+   2. [I18n](#i18n)
 
-## 当前范围
-
-1. 用 DSL 在 controller 旁边声明接口契约
-2. 基于 DSL 对请求做校验和类型转换
-3. 生成一份经过校验后的 hash 供 action 直接使用
-
-OpenAPI 文档生成已在规划中，但当前还没有实现。
-
-### 快速上手
+## 示例
 
 ```ruby
 class UsersController < ApplicationController
@@ -32,7 +41,7 @@ class UsersController < ApplicationController
     query :locale, String, default: "zh-CN"
     query :page, Integer, default: -> { 1 }
 
-    json data: {
+    form data: {
       name!: String,
       age: Integer,
       birthday: Date,
@@ -69,25 +78,58 @@ gem "action_spec"
 $ bundle
 ```
 
-## 用法
+## OpenAPI 生成
 
-### `doc` 怎么绑定
+基于当前 Rails 路由和 ActionSpec 的 controller DSL 生成一份 OpenAPI 文档：
 
-默认写法会自动绑定到后面的实例方法：
+```bash
+bin/rails action_spec:gen
+```
+
+默认会输出到：
+
+```text
+docs/openapi.yml
+```
+
+如果只是临时执行一次，也可以用环境变量覆盖默认输出路径和文档元信息：
+
+```bash
+bin/rails action_spec:gen \
+  OUTPUT=docs/openapi.yml \
+  TITLE="My API" \
+  VERSION="2026.03" \
+  SERVER_URL="https://api.example.com"
+```
+
+说明：
+
+1. 只会生成那些已经有对应 `doc` 声明、并且真的挂在 Rails 路由上的 controller action。
+2. 像 `/users/:id(.:format)` 这样的 Rails 路径，会输出成 `/users/{id}`。
+3. 请求参数、请求体、响应描述，会基于当前 DSL 能表达的内容生成。
+4. 如果配置和环境变量里都没有提供 `TITLE` 或 `VERSION`，ActionSpec 会使用应用名推导的默认值。
+
+## Doc DSL
+
+### `doc`
+
+`doc` 会自动绑定到后面的实例方法：
 
 ```ruby
 doc {
-  json data: { name!: String }
+  form data: {    # <= request body DSL
+    name!: String # <= schema DSL
+  }
 }
 def create
 end
 ```
 
-默认写法同样可以带 summary：
+可以带 summary：
 
 ```ruby
 doc("创建用户") {
-  json data: { name!: String }
+  form data: { name!: String }
 }
 def create
 end
@@ -97,13 +139,13 @@ end
 
 ```ruby
 doc(:create, "创建用户") {
-  json data: { name!: String }
+  form data: { name!: String }
 }
 def create
 end
 ```
 
-### 用 `doc_dry` 抽公共声明
+### `doc_dry`
 
 ```ruby
 class ApplicationController < ActionController::API
@@ -122,11 +164,7 @@ end
 
 ### DSL 详细说明
 
-贴近 `zero-rails_openapi` 写法
-
-#### 1. 参数位置 DSL
-
-单个参数：
+#### 1. Parameter
 
 ```ruby
 header  :Authorization, String
@@ -171,7 +209,7 @@ in_query!(
 )
 ```
 
-#### 2. request body DSL
+#### 2. request body
 
 通用形式：
 
@@ -202,7 +240,7 @@ data :file, File
 1. 运行时校验里，`body/body!`、`json/json!`、`form/form!` 最终都会汇总进同一份请求体契约。
 2. `body!`、`json!`、`form!` 目前主要是为了保留 DSL 兼容性；“整个 body 是否 required” 这个根级语义，运行时还没有单独做规则区分。
 
-#### 3. response DSL
+#### 3. response
 
 ```ruby
 response 200, desc: "success"
@@ -213,7 +251,7 @@ error 401, "unauthorized"
 
 目前 `response` 只会保存元数据，暂时不会自动驱动响应渲染。
 
-### Schema 怎么写
+## Schemas
 
 #### 1. 必填字段
 
@@ -248,13 +286,12 @@ json data: {
 2. `Integer`
 3. `Float`
 4. `BigDecimal`
-5. `:boolean`
-6. 宿主项目自己定义的 `Boolean` 常量
-7. `Date`
-8. `DateTime`
-9. `Time`
-10. `File`
-11. `Object`
+5. `:boolean` / `Boolean`
+6. `Date`
+7. `DateTime`
+8. `Time`
+9. `File`
+10. `Object`
 
 嵌套写法：
 
@@ -302,6 +339,8 @@ query :slug, String, pattern: /\A[a-z\-]+\z/
 3. `examples`
 4. `allow_nil`
 5. `allow_blank`
+
+## 参数验证和类型转换
 
 ### 参数处理流程
 
@@ -399,12 +438,18 @@ rescue_from ActionSpec::InvalidParameters
 }
 ```
 
+## 配置和 I18n
+
 ### 配置
 
 ```ruby
 ActionSpec.configure do |config|
   config.rescue_invalid_parameters = true
   config.invalid_parameters_status = :bad_request
+  config.open_api_output = "docs/openapi.yml"
+  config.open_api_title = "My API"
+  config.open_api_version = "2026.03"
+  config.open_api_server_url = "https://api.example.com"
 
   config.error_messages[:invalid_type] = ->(_attribute, options) do
     "should be coercible to #{options.fetch(:expected)}"
@@ -440,6 +485,22 @@ end
 5. `error_messages`
    默认值：`{}`。
    用来按错误类型，或者按“字段 + 错误类型”的粒度覆写错误消息。
+
+6. `open_api_output`
+   默认值：`"docs/openapi.yml"`。
+   用来指定 `bin/rails action_spec:gen` 生成文档时的默认输出路径。
+
+7. `open_api_title`
+   默认值：`nil`。
+   用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.title`。
+
+8. `open_api_version`
+   默认值：`nil`。
+   用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.version`。
+
+9. `open_api_server_url`
+   默认值：`nil`。
+   用来指定生成文档里的默认 server URL。
 
 ### I18n
 

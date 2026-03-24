@@ -8,19 +8,28 @@ Concise and Powerful API Documentation Solution for Rails.
 - Requires: Ruby 3.1+ and Rails 7.0+
 - Note: this project was implemented with Codex in about one hour, has not yet been manually reviewed, and has not been validated in production. It does, however, come with fairly detailed RSpec tests generated with Codex.
 
-## Overview
+## Table Of Contents
 
-ActionSpec keeps API request contracts close to controller actions. It gives you a readable DSL for declaring request and response shapes, and runtime helpers for validation and type coercion.
+- [OpenAPI Generation](#openapi-generation)
+- [Doc DSL](#doc-dsl)
+  - [`doc`](#doc)
+  - [`doc_dry`](#doc_dry)
+  - [DSL Reference](#dsl-reference)
+- [Schemas](#schemas)
+  - [Required Fields](#required-fields)
+  - [Supported Runtime Types](#supported-runtime-types)
+  - [Type And Boundary Matrix](#type-and-boundary-matrix)
+  - [Supported Runtime Options](#supported-runtime-options)
+- [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
+  - [Validation Flow](#validation-flow)
+  - [Reading Validated Values With `px`](#reading-validated-values-with-px)
+  - [Errors](#errors)
+  - [Default Rescue Behavior](#default-rescue-behavior)
+- [Configuration And I18n](#configuration-and-i18n)
+  - [Configuration](#configuration)
+  - [I18n](#i18n)
 
-## Current Scope
-
-- A controller-friendly DSL for declaring request and response contracts
-- Runtime validation and type coercion based on that DSL
-- `px`, a validated hash built from the declared contract
-
-OpenAPI generation is planned, but not implemented yet.
-
-### Quick Start
+## Example
 
 ```ruby
 class UsersController < ApplicationController
@@ -32,7 +41,7 @@ class UsersController < ApplicationController
     query :locale, String, default: "zh-CN"
     query :page, Integer, default: -> { 1 }
 
-    json data: {
+    form data: {
       name!: String,
       age: Integer,
       birthday: Date,
@@ -69,25 +78,58 @@ Then run:
 $ bundle
 ```
 
-## Usage
+## OpenAPI Generation
 
-### How To Bind `doc`
+Generate an OpenAPI document from the current Rails routes and ActionSpec controller docs:
 
-Default form, with action inferred from the next instance method:
+```bash
+bin/rails action_spec:gen
+```
+
+By default, this writes to:
+
+```text
+docs/openapi.yml
+```
+
+For one-off runs, environment variables can override the default output path and document metadata:
+
+```bash
+bin/rails action_spec:gen \
+  OUTPUT=docs/openapi.yml \
+  TITLE="My API" \
+  VERSION="2026.03" \
+  SERVER_URL="https://api.example.com"
+```
+
+Notes:
+
+- only routed controller actions with a matching `doc` declaration are included
+- Rails paths such as `/users/:id(.:format)` are rendered as `/users/{id}`
+- parameters, request bodies, and response descriptions are generated from the current DSL support
+- if config and environment variables do not provide `TITLE` or `VERSION`, ActionSpec falls back to application-derived defaults
+
+## Doc DSL
+
+### `doc`
+
+With action inferred from the next instance method:
 
 ```ruby
 doc {
-  json data: { name!: String }
+  form data: {    # <= request body DSL
+    name!: String # <= schema DSL
+  }
 }
 def create
 end
 ```
 
-You can still provide a summary in the default form:
+Provide a summary:
 
 ```ruby
 doc("Create user") {
-  json data: { name!: String }
+  form data: { name!: String }
 }
 def create
 end
@@ -97,13 +139,13 @@ You can also bind it explicitly when you want the action name declared in place:
 
 ```ruby
 doc(:create, "Create user") {
-  json data: { name!: String }
+  form data: { name!: String }
 }
 def create
 end
 ```
 
-### Shared Declarations With `doc_dry`
+### `doc_dry`
 
 ```ruby
 class ApplicationController < ActionController::API
@@ -122,11 +164,7 @@ All matching dry blocks are applied before the action-specific `doc`.
 
 ### DSL Reference
 
-ActionSpec keeps the request DSL close to `zero-rails_openapi`.
-
-#### Parameter Locations
-
-Single-parameter forms:
+#### Parameter
 
 ```ruby
 header  :Authorization, String
@@ -171,7 +209,7 @@ in_query!(
 )
 ```
 
-#### Request Bodies
+#### request body 
 
 General form:
 
@@ -199,7 +237,7 @@ data :file, File
 
 For `body/body!`, `json/json!`, and `form/form!`, the bang form is currently kept for DSL compatibility. At runtime they all contribute to the same body contract, and root-body requiredness is not yet enforced as a separate rule.
 
-#### Response Metadata
+#### Response 
 
 ```ruby
 response 200, desc: "success"
@@ -210,7 +248,7 @@ error 401, "unauthorized"
 
 Response declarations are stored as metadata now. They are not yet used to render responses automatically.
 
-### Schema Writing
+## Schemas
 
 #### Required Fields
 
@@ -241,8 +279,7 @@ Scalar types currently supported by validation/coercion:
 - `Integer`
 - `Float`
 - `BigDecimal`
-- `:boolean`
-- host-defined `Boolean` constant, if the host app already defines one
+- `:boolean` / `Boolean`
 - `Date`
 - `DateTime`
 - `Time`
@@ -297,6 +334,8 @@ These options are currently accepted as metadata, mainly for future OpenAPI work
 - `examples`
 - `allow_nil`
 - `allow_blank`
+
+## Parameter Validation And Type Coercion
 
 ### Validation Flow
 
@@ -396,12 +435,18 @@ The default JSON response is:
 }
 ```
 
+## Configuration And I18n
+
 ### Configuration
 
 ```ruby
 ActionSpec.configure do |config|
   config.rescue_invalid_parameters = true
   config.invalid_parameters_status = :bad_request
+  config.open_api_output = "docs/openapi.yml"
+  config.open_api_title = "My API"
+  config.open_api_version = "2026.03"
+  config.open_api_server_url = "https://api.example.com"
 
   config.error_messages[:invalid_type] = ->(_attribute, options) do
     "should be coercible to #{options.fetch(:expected)}"
@@ -438,6 +483,22 @@ Available config keys:
   Default: `{}`.
   Lets you override error messages by error type, or by attribute plus error type.
 
+- `open_api_output`
+  Default: `"docs/openapi.yml"`.
+  Controls where `bin/rails action_spec:gen` writes the generated OpenAPI document.
+
+- `open_api_title`
+  Default: `nil`.
+  Sets the default OpenAPI `info.title` used by `bin/rails action_spec:gen`.
+
+- `open_api_version`
+  Default: `nil`.
+  Sets the default OpenAPI `info.version` used by `bin/rails action_spec:gen`.
+
+- `open_api_server_url`
+  Default: `nil`.
+  Sets the default server URL emitted in the generated OpenAPI document.
+
 ### I18n
 
 ActionSpec loads its own locale files and uses `ActiveModel::Errors`, so you can override both messages and attribute names:
@@ -466,7 +527,7 @@ ActionSpec.configure do |config|
 end
 ```
 
-### What Is Not Implemented Yet
+## What Is Not Implemented Yet
 
 - OpenAPI document generation
 - automatic response rendering from `response`
