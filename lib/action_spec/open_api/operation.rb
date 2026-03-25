@@ -52,7 +52,7 @@ module ActionSpec
           return { "200" => { "description" => "OK" } } if endpoint.responses.empty?
 
           endpoint.responses.each_with_object(ActiveSupport::OrderedHash.new) do |(code, response), hash|
-            hash[code] = { "description" => response.description.presence || "OK" }
+            hash[code] = schema.response(response)
           end
         end
     end

@@ -3,6 +3,8 @@
 require "spec_helper"
 
 RSpec.describe ActionSpec::Doc do
+  include_context "with reset ActionSpec config"
+
   it "supports explicit action binding with doc :action" do
     base_controller = build_controller do
       doc_dry %i[show update destroy] do
@@ -87,5 +89,41 @@ RSpec.describe ActionSpec::Doc do
     end
 
     expect(controller.action_spec_for(:create).dsl).not_to respond_to(:resp)
+  end
+
+  it "defaults response and error declarations to json media type" do
+    controller = build_controller do
+      doc :create do
+        response 200, "ok"
+        error 503, { code!: Integer, message!: String }
+      end
+
+      def create; end
+    end
+
+    endpoint = controller.action_spec_for(:create)
+
+    expect(endpoint.responses.fetch("200").media_types.keys).to eq([:json])
+    expect(endpoint.responses.fetch("503").media_types.keys).to eq([:json])
+  end
+
+  it "lets configuration override the default response media type" do
+    ActionSpec.configure do |config|
+      config.default_response_media_type = :form
+    end
+
+    controller = build_controller do
+      doc :create do
+        response 200, "ok"
+        error 503, { code!: Integer, message!: String }
+      end
+
+      def create; end
+    end
+
+    endpoint = controller.action_spec_for(:create)
+
+    expect(endpoint.responses.fetch("200").media_types.keys).to eq([:form])
+    expect(endpoint.responses.fetch("503").media_types.keys).to eq([:form])
   end
 end

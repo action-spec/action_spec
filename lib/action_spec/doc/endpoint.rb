@@ -23,7 +23,8 @@ module ActionSpec
       end
 
       def add_response(code, response)
-        @responses[code.to_s] = response
+        existing = @responses[code.to_s]
+        @responses[code.to_s] = existing ? existing.merge(response) : response
       end
 
       def copy
@@ -134,18 +135,87 @@ module ActionSpec
     end
 
     class Response
-      attr_reader :code, :description, :media_type, :options
+      attr_reader :code, :description, :media_types, :options
 
-      def initialize(code:, description:, media_type:, options:)
+      def initialize(code:, description:, media_type:, schema: nil, example: nil, examples: nil, options:)
         @code = code.to_s
         @description = description
-        @media_type = media_type
-        @options = options
+        @media_types = ActiveSupport::OrderedHash.new
+        @options = options.deep_dup
+        merge_media_type!(media_type || :json, schema:, example:, examples:, initialize: true)
+      end
+
+      def merge(other)
+        copy.tap do |merged|
+          merged.instance_variable_set(:@description, other.description.presence || description)
+          merged.instance_variable_set(:@options, options.deep_dup.merge(other.options.deep_dup))
+          other.media_types.each do |media_type, content|
+            merged.send(:merge_media_type!, media_type, **merged.send(:copy_content, content))
+          end
+        end
       end
 
       def copy
-        self.class.new(code:, description:, media_type:, options: options.deep_dup)
+        self.class.new(
+          code:,
+          description:,
+          media_type: nil,
+          schema: nil,
+          example: nil,
+          examples: nil,
+          options: options.deep_dup
+        ).tap do |response|
+          response.instance_variable_set(
+            :@media_types,
+            media_types.each_with_object(ActiveSupport::OrderedHash.new) do |(media_type, content), hash|
+              hash[media_type] = copy_content(content)
+            end
+          )
+        end
       end
+
+      private
+
+        def merge_media_type!(media_type, schema:, example:, examples:, initialize: false)
+          content = (@media_types[media_type.to_sym] ||= {
+            schema: nil,
+            example: nil,
+            examples: ActiveSupport::OrderedHash.new
+          })
+          content[:schema] = schema || content[:schema]
+
+          if examples.present?
+            convert_example_into_default_example!(content)
+            content[:examples].merge!(normalize_examples(examples))
+          elsif !example.nil?
+            if content[:examples].present? && !initialize
+              content[:examples]["default"] ||= example
+            else
+              content[:example] = example
+            end
+          end
+        end
+
+        def convert_example_into_default_example!(content)
+          return if content[:example].nil?
+
+          content[:examples]["default"] ||= content[:example]
+          content[:example] = nil
+        end
+
+        def normalize_examples(examples)
+          examples.each_with_object(ActiveSupport::OrderedHash.new) do |(name, value), hash|
+            hash[name.to_s] = value
+          end
+        end
+
+        def copy_content(content)
+          {
+            schema: content[:schema]&.copy,
+            example: content[:example].deep_dup,
+            examples: content[:examples].deep_dup
+          }
+        end
     end
   end
 end

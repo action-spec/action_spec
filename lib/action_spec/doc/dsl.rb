@@ -67,24 +67,65 @@ module ActionSpec
         endpoint.options[:openapi] = enabled
       end
 
-      def response(code, description = nil, media_type = nil, desc: nil, **options)
+      RESPONSE_MEDIA_TYPES = %i[json form].freeze
+
+      def response(code, description = nil, media_type = nil, desc: nil, data: nil, example: nil, examples: nil, **options)
+        description, media_type = normalize_response_arguments(description, media_type)
+        schema, example, examples = normalize_response_body(description, data:, example:, examples:, options:)
         endpoint.add_response(
           code,
           Response.new(
             code:,
-            description: description || desc.to_s,
-            media_type:,
+            description: resolved_description(description, desc),
+            media_type: media_type || ActionSpec.config.default_response_media_type,
+            schema:,
+            example:,
+            examples:,
             options:
           )
         )
       end
 
-      alias error response
+      def error(code, description = nil, media_type = nil, desc: nil, **options)
+        response(code, description, media_type, desc: desc || "Error", **options)
+      end
+
+      def errors(code, examples = nil, media_type = nil, desc: "Error", **options)
+        response(code, nil, media_type, desc:, examples: examples || options, **options.except(*Array((examples || options).keys)))
+      end
 
       private
 
         attr_reader :endpoint
         attr_reader :scopes
+
+        def normalize_response_arguments(description, media_type)
+          return [nil, description] if media_type.nil? && response_media_type?(description)
+
+          [description, media_type]
+        end
+
+        def response_media_type?(value)
+          value.is_a?(Symbol) && RESPONSE_MEDIA_TYPES.include?(value)
+        end
+
+        def normalize_response_body(description, data:, example:, examples:, options:)
+          return [data && ActionSpec::Schema.from_definition(data), example, examples] if data || example || examples
+          return [nil, nil, options.presence] if options.present?
+          return [nil, nil, nil] if description.is_a?(String) || description.nil?
+
+          parsed_schema = ActionSpec::Schema.schema_definition?(description) ? ActionSpec::Schema.from_definition(description) : nil
+          return [parsed_schema, nil, nil] if parsed_schema
+
+          [nil, description, options.presence]
+        end
+
+        def resolved_description(description, desc)
+          return description if description.is_a?(String)
+          return desc if desc.present?
+
+          nil
+        end
 
         def add_param(location_name, name, type, required:, **options)
           required ||= options.delete(:required) == true

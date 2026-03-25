@@ -41,6 +41,13 @@ module ActionSpec
         end
       end
 
+      def response(response)
+        {
+          "description" => response.description.presence || "OK",
+          "content" => response_content(response).presence
+        }.compact
+      end
+
       def schema_for(schema)
         case schema
         when ActionSpec::Schema::Scalar then scalar_schema(schema)
@@ -51,6 +58,29 @@ module ActionSpec
       end
 
       private
+
+        def response_content(response)
+          response.media_types.each_with_object(ActiveSupport::OrderedHash.new) do |(media_type, content), hash|
+            normalized = response_media_type_content(content)
+            next if normalized.blank?
+
+            hash[MEDIA_TYPE_MAP.fetch(media_type, media_type.to_s)] = normalized
+          end
+        end
+
+        def response_media_type_content(content)
+          {}.tap do |definition|
+            if (schema = content[:schema] || infer_schema_from_examples(content)).present?
+              definition["schema"] = schema_for(schema)
+            end
+
+            if (examples = normalize_response_examples(content[:examples])).present?
+              definition["examples"] = examples
+            elsif (example = normalize_response_example(content[:example])).present?
+              definition["example"] = example
+            end
+          end.presence
+        end
 
         def parameter_name(field, location)
           return field.name.to_s if location != :header
@@ -199,6 +229,79 @@ module ActionSpec
 
         def invalid_openapi_literal
           @invalid_openapi_literal ||= Object.new.freeze
+        end
+
+        def normalize_response_example(example)
+          normalized = openapi_literal(example)
+          return if normalized.nil? || normalized.equal?(invalid_openapi_literal)
+
+          normalized
+        end
+
+        def normalize_response_examples(examples)
+          return if examples.blank?
+
+          examples.each_with_object(ActiveSupport::OrderedHash.new) do |(name, value), hash|
+            normalized = openapi_literal(value)
+            next if normalized.nil? || normalized.equal?(invalid_openapi_literal)
+
+            hash[name.to_s] = { "value" => normalized }
+          end.presence
+        end
+
+        def infer_schema_from_examples(content)
+          values =
+            if content[:examples].present?
+              content[:examples].values
+            elsif !content[:example].nil?
+              [content[:example]]
+            else
+              []
+            end
+          return if values.blank?
+
+          definition = infer_definition(values)
+          return if definition.blank?
+
+          ActionSpec::Schema.from_definition(definition)
+        end
+
+        def infer_definition(values)
+          values = Array(values)
+          present_values = values.compact
+          return if present_values.empty?
+
+          return infer_object_definition(present_values) if present_values.all? { |value| value.is_a?(Hash) }
+          return infer_array_definition(present_values) if present_values.all? { |value| value.is_a?(Array) }
+
+          infer_scalar_definition(present_values)
+        end
+
+        def infer_object_definition(values)
+          keys = values.flat_map(&:keys).map(&:to_s).uniq
+          keys.each_with_object(ActiveSupport::OrderedHash.new) do |key, definition|
+            child_values = values.select { |value| value.key?(key) || value.key?(key.to_sym) }.map { |value| value[key] || value[key.to_sym] }
+            child_definition = infer_definition(child_values)
+            next if child_definition.blank?
+
+            name = values.all? { |value| value.key?(key) || value.key?(key.to_sym) } ? :"#{key}!" : key.to_sym
+            definition[name] = child_definition
+          end
+        end
+
+        def infer_array_definition(values)
+          flattened = values.flatten(1)
+          item_definition = infer_definition(flattened)
+          item_definition ? [item_definition] : []
+        end
+
+        def infer_scalar_definition(values)
+          return Integer if values.all? { |value| value.is_a?(Integer) }
+          return Float if values.all? { |value| value.is_a?(Numeric) }
+          return :boolean if values.all? { |value| value == true || value == false }
+          return String if values.all? { |value| value.is_a?(String) }
+
+          String
         end
     end
   end

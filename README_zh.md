@@ -306,10 +306,26 @@ px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```ruby
 response 200, desc: "success"
 response 422, "validation failed"
+response 200, :json, data: { code!: Integer, result: Object }
+
 error 401, "unauthorized"
+error 503, { code!: Integer, message!: String } # error data schema
+error 503, { code: 1000, message: "参数错误" }   # 匿名 error example
+error 503, invalid_params: { code: 1000, message: "参数错误" } # 具名 error example
+# 批量声明多个具名 example
+errors 503, {
+  invalid_params: { code: 1000, message: "参数错误" },
+  network_error: { code: 1001, message: "网络错误" }
+}
+errors 503, network_error: { code: 1001 }, upstream_timeout: { code: 1002 } # 也可以不用大括号
 ```
 
-目前 `response` 只会保存元数据，暂时不会自动驱动响应渲染。
+`response` 元数据会参与 OpenAPI 生成，但暂时不会在运行时自动驱动响应渲染。
+
+说明：
+
+1. `response`、`error`、`errors` 默认使用 `:json` （可配置）作为 `media_type`。
+2. 如果只声明了 examples、没有显式声明 schema，ActionSpec 会在生成 OpenAPI 时根据 examples 自动推导响应 schema。
 
 ## Schemas
 
@@ -385,9 +401,9 @@ query :title, String, blank: false # or allow_blank: false
 
 这些选项仅用于 OpenAPI 文档生成：
 
-1. `desc`
-2. `example`
-3. `examples`
+```ruby
+query :page, Integer, desc: "page number", example: 1, examples: [1, 2, 3]
+```
 
 另外，如果 default 等 OpenAPI 选项，无法被转化为 YAML 时（比如 `default: -> { ... }`）），不会将其输出到 OpenAPI 文档中。
 
@@ -568,6 +584,7 @@ ActionSpec.configure { |config|
   config.open_api_title = "My API"
   config.open_api_version = "2026.03"
   config.open_api_server_url = "https://api.example.com"
+  config.default_response_media_type = :json
 
   config.error_messages[:invalid_type] = ->(_attribute, options) {
     "should be coercible to #{options.fetch(:expected)}"
@@ -600,6 +617,10 @@ ActionSpec.configure { |config|
 6. `open_api_server_url`
    默认值：`nil`。
    用来指定生成文档里的默认 server URL。
+
+7. `default_response_media_type`
+   默认值：`:json`。
+   用来指定 `response`、`error`、`errors` 在未显式传入 media type 时使用的默认响应 media type。
 
 ### I18n
 
@@ -649,18 +670,17 @@ ActionSpec.configure { |config|
 4. parameter 上的 `style`、`explode`、`allowReserved`、`examples`，以及更完整的 header / cookie 序列化控制
 5. request body 的 `encoding`
 6. 除当前 DSL 直接映射之外的更多 request / response media type
-7. response body schema 生成；当前 `response` / `error` 只会生成响应描述
-8. response headers
-9. response links
-10. callbacks
-11. webhooks
-12. path 级共享 parameters
-13. 顶层 `components.parameters`、`components.requestBodies`、`components.responses`、`components.headers`、`components.examples`、`components.links`、`components.callbacks`、`components.schemas`、`components.securitySchemes`、`components.pathItems`
-14. 顶层 `security`
-15. 顶层 `tags`
-16. 顶层 `externalDocs`
-17. `jsonSchemaDialect`
-18. 超出当前子集的更多 schema 关键字支持，包括对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
+7. response headers
+8. response links
+9. callbacks
+10. webhooks
+11. path 级共享 parameters
+12. 顶层 `components.parameters`、`components.requestBodies`、`components.responses`、`components.headers`、`components.examples`、`components.links`、`components.callbacks`、`components.schemas`、`components.securitySchemes`、`components.pathItems`
+13. 顶层 `security`
+14. 顶层 `tags`
+15. 顶层 `externalDocs`
+16. `jsonSchemaDialect`
+17. 超出当前子集的更多 schema 关键字支持，包括对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
 
 ## 贡献
 

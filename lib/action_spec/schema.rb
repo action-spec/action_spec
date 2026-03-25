@@ -75,6 +75,27 @@ module ActionSpec
         from_definition(definition.except(:required).merge(type: String))
       end
 
+      def schema_definition?(definition)
+        case definition
+        when Array
+          definition.one? && schema_definition?(definition.first)
+        when Hash
+          definition = definition.with_indifferent_access
+          return true if definition.key?(:type)
+          return true if definition.keys.all? { |key| FIELD_OPTION_KEYS.include?(key.to_sym) }
+
+          definition.any? do |name, value|
+            required_key?(name) || schema_definition?(value)
+          end
+        when Class
+          true
+        when Symbol
+          definition == :boolean || definition == :file || definition == :object
+        else
+          false
+        end
+      end
+
       private
 
         def explicit_required?(definition)

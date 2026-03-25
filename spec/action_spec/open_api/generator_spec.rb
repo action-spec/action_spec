@@ -180,6 +180,186 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     )
   end
 
+  it "emits error response schemas from schema hashes and defaults the media type to json" do
+    stub_const("PaymentsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create payment") do
+        error 503, { code!: Integer, message!: String }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/payments",
+          defaults: { controller: "payments", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    response = document.dig("paths", "/payments", "post", "responses", "503")
+
+    expect(response.fetch("description")).to eq("Error")
+    expect(response.dig("content", "application/json", "schema")).to include(
+      "type" => "object",
+      "required" => contain_exactly("code", "message"),
+      "properties" => include(
+        "code" => include("type" => "integer"),
+        "message" => include("type" => "string")
+      )
+    )
+  end
+
+  it "treats the second positional argument as media type when it is a known response media type" do
+    stub_const("SessionsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create session") do
+        response 422, :json, data: { code!: Integer, message!: String }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/sessions",
+          defaults: { controller: "sessions", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    response = document.dig("paths", "/sessions", "post", "responses", "422")
+
+    expect(response.fetch("description")).to eq("OK")
+    expect(response.dig("content", "application/json", "schema")).to include(
+      "required" => contain_exactly("code", "message"),
+      "properties" => include(
+        "code" => include("type" => "integer"),
+        "message" => include("type" => "string")
+      )
+    )
+  end
+
+  it "treats bare error hashes as unnamed examples and infers the response schema" do
+    stub_const("ImportsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create import") do
+        error 503, { code: 1000, message: "network error" }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/imports",
+          defaults: { controller: "imports", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    response = document.dig("paths", "/imports", "post", "responses", "503")
+
+    expect(response.dig("content", "application/json", "schema")).to include(
+      "required" => contain_exactly("code", "message"),
+      "properties" => include(
+        "code" => include("type" => "integer"),
+        "message" => include("type" => "string")
+      )
+    )
+    expect(response.dig("content", "application/json", "example")).to eq(
+      "code" => 1000,
+      "message" => "network error"
+    )
+  end
+
+  it "supports named error examples and the errors batch helper" do
+    stub_const("ExportsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create export") do
+        error 503, invalid_params: { code: 1000, message: "invalid params" }
+        errors 503,
+          network_error: { code: 1001, message: "network error" },
+          upstream_timeout: { code: 1002, message: "upstream timeout" }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/exports",
+          defaults: { controller: "exports", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    response = document.dig("paths", "/exports", "post", "responses", "503")
+    content = response.dig("content", "application/json")
+
+    expect(content.dig("schema", "required")).to contain_exactly("code", "message")
+    expect(content.fetch("examples")).to eq(
+      "invalid_params" => { "value" => { "code" => 1000, "message" => "invalid params" } },
+      "network_error" => { "value" => { "code" => 1001, "message" => "network error" } },
+      "upstream_timeout" => { "value" => { "code" => 1002, "message" => "upstream timeout" } }
+    )
+  end
+
+  it "also supports the braced errors hash form" do
+    stub_const("JobsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create job") do
+        errors 503, {
+          invalid_params: { code: 1000, message: "invalid params" },
+          network_error: { code: 1001, message: "network error" }
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/jobs",
+          defaults: { controller: "jobs", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    response = document.dig("paths", "/jobs", "post", "responses", "503")
+
+    expect(response.dig("content", "application/json", "examples")).to eq(
+      "invalid_params" => { "value" => { "code" => 1000, "message" => "invalid params" } },
+      "network_error" => { "value" => { "code" => 1001, "message" => "network error" } }
+    )
+  end
+
   it "uses doc(tag:) to override the default controller_path tag" do
     stub_const("AuctionsController", Class.new(ActionController::Base) do
       include ActionSpec::Doc

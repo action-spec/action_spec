@@ -310,10 +310,27 @@ px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```ruby
 response 200, desc: "success"
 response 422, "validation failed"
+response 200, :json, data: { code!: Integer, result: Object }
+
 error 401, "unauthorized"
+error 503, { code!: Integer, message!: String } # error data schema
+error 503, { code: 1000, message: "invalid params" } # unnamed error example
+error 503, invalid_params: { code: 1000, message: "invalid params" } # named error example
+# declare multiple named examples in batch
+errors 503, {
+  invalid_params: { code: 1000, message: "invalid params" },
+  network_error: { code: 1001, message: "network error" }
+}
+errors 503, network_error: { code: 1001 }, upstream_timeout: { code: 1002 } # braces are also optional
+
 ```
 
-Response declarations are stored as metadata now. They are not yet used to render responses automatically.
+Response declarations are stored as metadata and are emitted in OpenAPI. They do not render responses automatically at runtime.
+
+Notes:
+
+1. `response`, `error`, and `errors` default `media_type` to `:json` and this default is configurable.
+2. If examples are declared without an explicit schema, ActionSpec infers the response schema from the example payloads for OpenAPI generation.
 
 ## Schemas
 
@@ -385,9 +402,9 @@ query :title, String, blank: false # or allow_blank: false
 
 These options are used by OpenAPI generation:
 
-- `desc`
-- `example`
-- `examples`
+```ruby
+query :page, Integer, desc: "page number", example: 1, examples: [1, 2, 3]
+```
 
 If an OpenAPI-facing option such as `default` cannot be converted into YAML, for example `default: -> { ... }`, it will be omitted from the generated OpenAPI document.
 
@@ -570,6 +587,7 @@ ActionSpec.configure { |config|
   config.open_api_title = "My API"
   config.open_api_version = "2026.03"
   config.open_api_server_url = "https://api.example.com"
+  config.default_response_media_type = :json
 
   config.error_messages[:invalid_type] = ->(_attribute, options) {
     "should be coercible to #{options.fetch(:expected)}"
@@ -602,6 +620,10 @@ Available config keys:
 - `open_api_server_url`
   Default: `nil`.
   Sets the default server URL emitted in the generated OpenAPI document.
+
+- `default_response_media_type`
+  Default: `:json`.
+  Sets the default response media type used by `response`, `error`, and `errors` when no media type is passed explicitly.
 
 ### I18n
 
@@ -651,7 +673,6 @@ When using AI tools to generate Rails controller code, and the change involves p
 - parameter-level `style`, `explode`, `allowReserved`, `examples`, and richer header/cookie serialization controls
 - request body `encoding`
 - multiple request/response media types beyond the current direct DSL mapping
-- response body schema generation; current `response` / `error` declarations only generate response descriptions
 - response headers
 - response links
 - callbacks
