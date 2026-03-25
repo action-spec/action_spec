@@ -16,7 +16,7 @@ Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md
    2. [`doc_dry`](#doc_dry)
    3. [DSL Inside `doc`](#dsl-inside-doc)
       1. [Parameter](#parameter)
-      2. [request body](#request-body)
+      2. [Request body](#request-body)
       3. [`openapi false`](#openapi-false)
       4. [Scope](#scope)
       5. [Response](#response)
@@ -29,7 +29,8 @@ Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md
 4. [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
    1. [Validation Flow](#validation-flow)
    2. [Reading Processed Values With `px`](#reading-processed-values-with-px)
-   3. [Errors](#errors)
+   3. [`px` is Whitelist Extraction](#px-is-whitelist-extraction)
+   4. [Errors](#errors)
 5. [Configuration And I18n](#configuration-and-i18n)
    1. [Configuration](#configuration)
    2. [I18n](#i18n)
@@ -44,25 +45,26 @@ class UsersController < ApplicationController
   doc {
     header :Authorization, String
     path :account_id, Integer
-    query :locale, String, default: "zh-CN"
-    query :page, Integer, default: -> { 1 }
+    query :locale, String, default: "zh-CN", transform: -> { it.downcase }
+    query :key_number, Integer, default: -> { it + 1 }, px: :key
 
     form data: {
-      name!: String,
-      age: Integer,
+      name!: { type: String, transform: :strip },
       birthday: Date,
       admin: { type: :boolean, default: false },
-      tags: [String],
-      profile: {
-        nickname!: String
-      }
+      tags: [{ id: Integer, content!: { type: String, blank: false } }],
+      profile: { nickname!: String }
     }
 
-    response 200, desc: "success"
+    response 200, "success", :json, data: { code: Integer, result: [Hash] }
+    errors 400, "client errors", {
+      invalid_params: { code: 1234, message: "parameters are invalid" },
+      missing_params: { code: 1235, message: "parameters are missing" }
+    }
   }
   def create
-    User.create!(
-      account_id: px[:account_id], name: px[:name],
+    User.find(px[:account_id]).update!(
+      key: px[:key], name: px[:name],
       **px.slice(:birthday, :admin, :profile)
     )
   end
@@ -235,7 +237,7 @@ in_query!(
 )
 ```
 
-#### request body 
+#### Request body
 
 General form:
 
@@ -317,7 +319,7 @@ px.scope[:filters] # => { q: "ruby" }
 
 These options only apply to the custom `px.scope[:name]` bucket defined by that `scope`, and use shallow hash compaction.
 
-#### Response 
+#### Response
 
 ```ruby
 response 200, desc: "success"
@@ -384,20 +386,36 @@ Scalar types currently supported by validation/coercion:
 - `DateTime`
 - `Time`
 - `File`
-- `Object`
+- `Object` / `Hash`
 
-Nested forms:
+```ruby
+query :page, Integer
+form data: { file: File }
+```
+
+Object and Nested Object forms:
 
 ```ruby
 json data: {
-  tags: [String],
-  profile: {
-    nickname!: String
-  },
-  settings: { type: Object },
-  users: [{ id: Integer }]
+  settings: Object,
+  # == settings: { type: Object }
+  # == settings: { type: Hash }
+  # == settings: { type: { } }
+
+  profile: { nickname!: String },
+  tags: [],
+  # == tags: { type: [] }
+  foo: [{ id: Integer }],
+
+  users: {
+    type: { name!: String },
+    default: { name: "Tom" },
+    transform: -> { { name: it[:name].downcase } }
+  }
 }
 ```
+
+When you write `xx: { type: ... }`, the type of `xx` comes from `type`. In other words, `type` is a reserved schema keyword here, not a normal nested field name.
 
 #### Field Options
 
@@ -412,12 +430,35 @@ query :title, String, blank: false # or allow_blank: false
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
 query :request_id, String, px_key: :trace_id
+query :end_at, Integer, validate: -> { it >= px[:start_at] }
 ```
 
 Notes:
 
 - `transform` accepts a `Symbol` or a `Proc` and runs **after coercion**, before the value is written into `px`
 - `px` and `px_key` customize the key name written into `px`; `px` is the short form of `px_key`
+- `validate` accepts a `Proc` and runs **after all parameters have been resolved, coerced, transformed, and written into `px`**
+- `validate` runs in the current controller context, so it can read `px` and call methods such as `current_user`
+- when `validate` returns `false` or `nil`, the field adds an `invalid` error
+
+About nested object fields
+
+Inner field options run first, and the outer object field runs last.  
+In other words, nested `transform` / `px` first participate in building the object, and after the whole object has been built, the outer field receives that final object and continues processing it.  
+Only after the whole object tree has finished resolving, coercing, and transforming does ActionSpec enter the post-`validate` phase: inner field `validate` callbacks run first, and outer object field `validate` callbacks run afterwards.
+
+```ruby
+json data: {
+  user: {
+    type: {
+      name: { type: String, transform: :strip, px: :nickname }
+    },
+    transform: -> { { name: it[:nickname].downcase } }
+  }
+}
+
+px[:user] # => { "name" => "tom" }
+```
 
 These options are used by OpenAPI generation:
 
@@ -566,12 +607,13 @@ px.scope[:query]
 px.scope[:body]
 px.scope[:headers]
 px.scope[:cookies]
+px.scope[:the_scope_you_defined]
 ```
 
 Notes:
 
 - every declared field from path/query/body is also flattened into the top-level `px[:field]`
-- custom `scope(:name)` buckets are also exposed through `px.scope[:name]`
+- `px` itself is an `ActiveSupport::HashWithIndifferentAccess`, and nested object values such as `px[:profile]` are also returned as indifferent hashes
 - headers and cookies stay inside their own grouped buckets; for example, `px[:Authorization]` is not a top-level shortcut
 - header keys are stored in lowercase dashed form, but reading remains compatible with original forms such as `Authorization` and `HTTP_AUTHORIZATION`, for example:
 
@@ -582,6 +624,28 @@ px.scope[:headers]["HTTP_AUTHORIZATION"]
 ```
 
 - original `params` are not mutated
+
+### `px` is Whitelist Extraction
+
+```ruby
+json data: {
+  profile: {
+    nickname: String
+  }
+}
+
+# request params
+{
+  profile: {
+    nickname: "Neo",
+    role: "admin"
+  }
+}
+
+px[:profile] # => { "nickname" => "Neo" }
+```
+
+Undeclared fields are filtered out, including extra keys inside nested objects.
 
 ### Errors
 
@@ -674,6 +738,7 @@ When using AI tools to generate Rails controller code, and the change involves p
 - when a batch has 3 fields or fewer and does not contain nested hashes, prefer a single-line style, for example:
   - `json data: { type: String, required: true }`
   - `in_query(name: String, value: String)` (prefer `in_xxx(...)` batch declarations over multiple `xx` DSL lines when possible)
+- use `!` but not `required: true`
 - use `doc_dry`, `scope`, and `transform`、`px(px_key)`、`px.slice` to keep controller concise
 - when request parameters match model declarations, prefer `.schemas` to keep `doc` concise
 

@@ -26,6 +26,10 @@ module ActionSpec
       def copy
         self.class.new(item.copy, default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
+
+      def custom_validation?
+        item.custom_validation?
+      end
     end
   end
 end

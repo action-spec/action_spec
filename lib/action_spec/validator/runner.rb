@@ -17,12 +17,21 @@ module ActionSpec
         merge_group!(result, endpoint.request.header, source: header_source, location: :headers)
         merge_group!(result, endpoint.request.cookie, source: cookie_source, location: :cookies)
         result.apply_scope_options!(endpoint.request.scope_options)
+        apply_custom_validations!(result)
         result
       end
 
       private
 
         attr_reader :endpoint, :controller, :coerce
+
+        BUILT_IN_GROUPS = {
+          path: ->(request) { request.path },
+          query: ->(request) { request.query },
+          body: ->(request) { request.body },
+          headers: ->(request) { request.header },
+          cookies: ->(request) { request.cookie }
+        }.freeze
 
         def merge_body!(result)
           if endpoint.request.body_required? && body_source.blank?
@@ -90,6 +99,100 @@ module ActionSpec
           return field.name.to_s.tr("_", "-").downcase if location == :headers
 
           field.name
+        end
+
+      def apply_custom_validations!(result)
+        return unless endpoint.request.custom_validation?
+
+        with_controller_px(result.px) do
+          BUILT_IN_GROUPS.each do |location, group_reader|
+            validate_group!(
+                result,
+                group_reader.call(endpoint.request),
+                values: result.px.scope.fetch(location),
+                location:
+              )
+            end
+          end
+        end
+
+        def validate_group!(result, group, values:, location:)
+          return unless group.custom_validation?
+
+          group.fields.each do |field|
+            next unless field.custom_validation?
+
+            key = storage_key(field, location)
+            next unless values.key?(key)
+
+            validate_field!(field, values[key], result:, path: [field.name])
+          end
+        end
+
+        def validate_field!(field, value, result:, path:)
+          validate_nested_schema!(field.schema, value, result:, path:)
+          return if field.validate_value(value, context: controller)
+
+          result.add_error(path.join("."), :invalid)
+        end
+
+        def validate_nested_schema!(schema, value, result:, path:)
+          return unless schema.custom_validation?
+
+          case schema
+          when ActionSpec::Schema::ObjectOf
+            return unless value.is_a?(Hash)
+
+            source = value.with_indifferent_access
+            schema.fields.each_value do |field|
+              next unless field.custom_validation?
+              next unless source.key?(field.output_name)
+
+              validate_field!(field, source[field.output_name], result:, path: [*path, field.name])
+            end
+          when ActionSpec::Schema::ArrayOf
+            return unless value.is_a?(Array)
+
+            value.each_with_index do |entry, index|
+              validate_array_item!(schema.item, entry, result:, path: [*path, index])
+            end
+          end
+        end
+
+        def validate_array_item!(schema, value, result:, path:)
+          return unless schema.custom_validation?
+
+          case schema
+          when ActionSpec::Schema::ObjectOf
+            return unless value.is_a?(Hash)
+
+            source = value.with_indifferent_access
+            schema.fields.each_value do |field|
+              next unless field.custom_validation?
+              next unless source.key?(field.output_name)
+
+              validate_field!(field, source[field.output_name], result:, path: [*path, field.name])
+            end
+          when ActionSpec::Schema::ArrayOf
+            return unless value.is_a?(Array)
+
+            value.each_with_index do |entry, index|
+              validate_array_item!(schema.item, entry, result:, path: [*path, index])
+            end
+          end
+        end
+
+        def with_controller_px(px)
+          previous_defined = controller.instance_variable_defined?(:@px)
+          previous = controller.instance_variable_get(:@px)
+          controller.instance_variable_set(:@px, px)
+          yield
+        ensure
+          if previous_defined
+            controller.instance_variable_set(:@px, previous)
+          else
+            controller.remove_instance_variable(:@px) if controller.instance_variable_defined?(:@px)
+          end
         end
     end
   end

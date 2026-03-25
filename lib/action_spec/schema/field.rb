@@ -3,13 +3,14 @@
 module ActionSpec
   module Schema
     class Field
-      attr_reader :name, :schema, :transform, :px_key, :scopes
+      attr_reader :name, :schema, :transform, :validate, :px_key, :scopes
 
-      def initialize(name:, required:, schema:, transform: nil, px_key: nil, scopes: [])
+      def initialize(name:, required:, schema:, transform: nil, validate: nil, px_key: nil, scopes: [])
         @name = name.to_sym
         @required = required
         @schema = schema
         @transform = transform
+        @validate = validate
         @px_key = px_key&.to_sym
         @scopes = Array(scopes).map(&:to_sym).freeze
       end
@@ -36,8 +37,21 @@ module ActionSpec
         end
       end
 
+      def validate_value(value, context: nil)
+        return true if validate.nil? || value.equal?(ActionSpec::Schema::Missing)
+
+        case validate
+        when Proc then apply_validation_proc(value, context:)
+        else true
+        end
+      end
+
+      def custom_validation?
+        validate.present? || schema.custom_validation?
+      end
+
       def copy
-        self.class.new(name:, required: required?, schema: schema.copy, transform:, px_key:, scopes:)
+        self.class.new(name:, required: required?, schema: schema.copy, transform:, validate:, px_key:, scopes:)
       end
 
       private
@@ -56,6 +70,14 @@ module ActionSpec
           return transform.call if transform.arity.zero?
 
           transform.call(value)
+        end
+
+        def apply_validation_proc(value, context:)
+          return context.instance_exec(&validate) if context && validate.arity.zero?
+          return context.instance_exec(value, &validate) if context && (validate.arity == 1 || validate.arity.negative?)
+          return validate.call if validate.arity.zero?
+
+          validate.call(value)
         end
 
         def invoke_context_transform(context, symbol, value)

@@ -108,6 +108,10 @@ module ActionSpec
           request.instance_variable_set(:@body_required, body_required?)
         end
       end
+
+      def custom_validation?
+        [header, path, query, cookie, body].any?(&:custom_validation?)
+      end
     end
 
     class Location
@@ -144,6 +148,10 @@ module ActionSpec
         self.class.new(name).tap do |location|
           fields.each { |field| location.add(field.copy) }
         end
+      end
+
+      def custom_validation?
+        fields.any?(&:custom_validation?)
       end
     end
 

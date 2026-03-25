@@ -15,7 +15,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ruby-3.3.0
+          ruby-version: ruby-3.1.0
           bundler-cache: true
 
       - name: Lint code for consistent style
@@ -40,7 +40,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ruby-3.3.0
+          ruby-version: ruby-3.1.0
           bundler-cache: true
 
       - name: Run tests
@@ -56,4 +56,3 @@ jobs:
           name: screenshots
           path: ${{ github.workspace }}/tmp/screenshots
           if-no-files-found: ignore
-

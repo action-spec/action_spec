@@ -37,6 +37,10 @@ module ActionSpec
         self.class.new(fields.transform_values(&:copy), default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
 
+      def custom_validation?
+        fields.any? { |_name, field| field.custom_validation? }
+      end
+
       private
 
         def normalize_source(value, result:, path:)

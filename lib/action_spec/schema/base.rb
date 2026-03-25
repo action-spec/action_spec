@@ -40,6 +40,10 @@ module ActionSpec
         raise NotImplementedError
       end
 
+      def custom_validation?
+        false
+      end
+
       private
 
         def add_error(result, path, type, **options)

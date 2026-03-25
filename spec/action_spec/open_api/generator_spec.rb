@@ -180,6 +180,126 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     )
   end
 
+  it "treats type: Hash the same as type: Object in generated object schemas" do
+    stub_const("SettingsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create settings") do
+        json data: {
+          settings: {
+            type: Hash,
+            theme!: String
+          }
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/settings",
+          defaults: { controller: "settings", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    schema = document.dig("paths", "/settings", "post", "requestBody", "content", "application/json", "schema")
+
+    expect(schema).to include(
+      "properties" => include(
+        "settings" => include(
+          "type" => "object",
+          "required" => include("theme"),
+          "properties" => include("theme" => include("type" => "string"))
+        )
+      )
+    )
+  end
+
+  it "emits object defaults for schemas declared through type: { ... }" do
+    stub_const("UsersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create users") do
+        json data: {
+          users: {
+            type: { name!: String },
+            default: { name: "Tom" }
+          }
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/users",
+          defaults: { controller: "users", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    schema = document.dig("paths", "/users", "post", "requestBody", "content", "application/json", "schema")
+
+    expect(schema).to include(
+      "properties" => include(
+        "users" => include(
+          "type" => "object",
+          "default" => { "name" => "Tom" },
+          "required" => include("name"),
+          "properties" => include("name" => include("type" => "string"))
+        )
+      )
+    )
+  end
+
+  it "treats type: [] the same as [] in generated array schemas" do
+    stub_const("TagsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create tags") do
+        json data: {
+          tags: { type: [] }
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/tags",
+          defaults: { controller: "tags", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    schema = document.dig("paths", "/tags", "post", "requestBody", "content", "application/json", "schema")
+
+    expect(schema).to include(
+      "properties" => include(
+        "tags" => include(
+          "type" => "array",
+          "items" => include("type" => "string")
+        )
+      )
+    )
+  end
+
   it "emits error response schemas from schema hashes and defaults the media type to json" do
     stub_const("PaymentsController", Class.new(ActionController::Base) do
       include ActionSpec::Doc

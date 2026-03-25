@@ -163,6 +163,93 @@ RSpec.describe ActionSpec::Validator do
     expect(px.scope[:body]).to include(tagline: "")
   end
 
+  it "treats type: Hash the same as type: Object for nested object schemas" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          settings: {
+            type: Hash,
+            theme!: String
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(
+      settings: {
+        theme: "dark",
+        ignored: "value"
+      }
+    )
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:settings]).to eq("theme" => "dark")
+  end
+
+  it "applies object defaults and transform for schemas declared through type: { ... }" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          users: {
+            type: { name!: String },
+            default: { name: "Tom" },
+            transform: -> { { name: it[:name].downcase } }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:users]).to eq("name" => "tom")
+  end
+
+  it "treats type: [] the same as [] for array schemas" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          tags: { type: [] }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(tags: %w[a b])
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:tags]).to eq(%w[a b])
+  end
+
   it "coerces values into px without mutating params" do
     file = Tempfile.new("action-spec")
     uploaded_file = ActionDispatch::Http::UploadedFile.new(
@@ -313,5 +400,132 @@ RSpec.describe ActionSpec::Validator do
     expect(px.scope[:query]).to include(page_number: 3, slug_value: "NEO", keyword: "ruby")
     expect(px.scope[:headers]).to include(request_id: "req-1")
     expect(px.scope[:search]).to include(keyword: "ruby")
+  end
+
+  it "applies nested field options before the outer object field transform" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          user: {
+            type: {
+              name: { type: String, transform: :strip, px: :nickname }
+            },
+            transform: -> { { name: it[:nickname].downcase } }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(user: { name: "  Tom  " })
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:user]).to eq("name" => "tom")
+  end
+
+  it "runs validate after all parameters have been coerced and transformed" do
+    controller = build_controller do
+      doc :create do
+        query :start_at, Integer, transform: -> { it * 2 }
+        query :end_at, Integer, validate: -> { it >= px[:start_at] }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(start_at: "3", end_at: "5")
+    runner_controller = Class.new(Struct.new(:params, :request)) do
+      def px
+        @px
+      end
+    end.new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.px[:start_at]).to eq(6)
+    expect(result.errors.attribute_names).to include(:end_at)
+  end
+
+  it "runs validate in the current controller context" do
+    controller = build_controller do
+      doc :create do
+        query :role, String, validate: -> { current_user.can?(it) }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(role: "editor")
+    ability = Struct.new(:allowed) do
+      def can?(value)
+        value == allowed
+      end
+    end.new("admin")
+    runner_controller = Class.new(Struct.new(:params, :request, :ability)) do
+      def px
+        @px
+      end
+
+      def current_user
+        ability
+      end
+    end.new(params, request, ability)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors.attribute_names).to include(:role)
+  end
+
+  it "runs outer object validate after nested field transforms and px renames" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          user: {
+            type: {
+              name: { type: String, transform: :strip, px: :nickname }
+            },
+            validate: -> { it[:nickname] == "Tom" }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(user: { name: "  Tom  " })
+    runner_controller = Class.new(Struct.new(:params, :request)) do
+      def px
+        @px
+      end
+    end.new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:user]).to eq("nickname" => "Tom")
   end
 end

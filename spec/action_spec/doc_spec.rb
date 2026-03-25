@@ -100,6 +100,52 @@ RSpec.describe ActionSpec::Doc do
     expect(endpoint.request).to be_body_required
   end
 
+  it "supports object schemas declared through type: { ... } with object defaults" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          users: {
+            type: { name!: String },
+            default: { name: "Tom" }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    field = controller.action_spec_for(:create).request.body.field(:users)
+
+    expect(field.schema).to be_a(ActionSpec::Schema::ObjectOf)
+    expect(field.schema.default).to eq(name: "Tom")
+    expect(field.schema.fields.keys).to eq([:name])
+    expect(field.schema.fields.fetch(:name)).to be_required
+  end
+
+  it "tracks whether a request tree contains custom validate callbacks" do
+    controller = build_controller do
+      doc :create do
+        query :page, Integer
+        json data: {
+          user: {
+            type: {
+              name: { type: String, validate: -> { it.present? } }
+            }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = controller.action_spec_for(:create).request
+
+    expect(request).to be_custom_validation
+    expect(request.query).not_to be_custom_validation
+    expect(request.body).to be_custom_validation
+    expect(request.body.field(:user)).to be_custom_validation
+  end
+
   it "does not expose the removed resp alias" do
     controller = build_controller do
       doc :create do

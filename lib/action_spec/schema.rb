@@ -13,7 +13,7 @@ module ActionSpec
   module Schema
     Missing = Object.new.freeze
     OPTION_KEYS = %i[default desc enum range pattern length blank allow_blank example examples].freeze
-    FIELD_OPTION_KEYS = (OPTION_KEYS + %i[required transform px px_key]).freeze
+    FIELD_OPTION_KEYS = (OPTION_KEYS + %i[required transform px px_key validate]).freeze
 
     class << self
       def build(type = nil, **options)
@@ -28,6 +28,7 @@ module ActionSpec
           required: required_key?(name) || required || explicit_required?(definition),
           schema: build_field_schema(strip_field_options(definition)),
           transform: explicit_transform(definition),
+          validate: explicit_validate(definition),
           px_key: explicit_px_key(definition),
           scopes:
         )
@@ -42,9 +43,17 @@ module ActionSpec
         definition = definition.deep_symbolize_keys
         if definition.key?(:type)
           type = definition[:type]
-          options = definition.except(:type)
+          options = definition.slice(*OPTION_KEYS)
           return ArrayOf.new(from_definition(type: type.first), options) if type.is_a?(Array) && type.one?
-          return ObjectOf.new(build_fields(definition.except(:type, *OPTION_KEYS))) if type == Object && definition.except(:type, *OPTION_KEYS).present?
+          return ArrayOf.new(from_definition(type: nil), options) if type == []
+          if type.is_a?(Hash)
+            return Scalar.new(Object, options) if type.empty?
+
+            return ObjectOf.new(build_fields(type), options)
+          end
+          if [Object, Hash].include?(type) && definition.except(:type, *OPTION_KEYS).present?
+            return ObjectOf.new(build_fields(definition.except(:type, *OPTION_KEYS)), options)
+          end
 
           return Scalar.new(type, options)
         end
@@ -108,6 +117,10 @@ module ActionSpec
           definition.is_a?(Hash) ? definition.symbolize_keys[:transform] : nil
         end
 
+        def explicit_validate(definition)
+          definition.is_a?(Hash) ? definition.symbolize_keys[:validate] : nil
+        end
+
         def explicit_px_key(definition)
           return unless definition.is_a?(Hash)
 
@@ -124,7 +137,7 @@ module ActionSpec
         def strip_field_options(definition)
           return definition unless definition.is_a?(Hash)
 
-          definition.symbolize_keys.except(:required, :transform, :px, :px_key)
+          definition.symbolize_keys.except(:required, :transform, :px, :px_key, :validate)
         end
     end
   end

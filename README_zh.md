@@ -29,7 +29,8 @@ Concise and Powerful API Documentation Solution for Rails.
 4. [参数验证和类型转换](#参数验证和类型转换)
    1. [参数处理流程](#参数处理流程)
    2. [`px` 里的值怎么读](#px-里的值怎么读)
-   3. [错误处理](#错误处理)
+   3. [`px` 是白名单提取](#px-是白名单提取)
+   4. [错误处理](#错误处理)
 5. [配置和 I18n](#配置和-i18n)
    1. [配置](#配置)
    2. [I18n](#i18n)
@@ -44,25 +45,26 @@ class UsersController < ApplicationController
   doc {
     header :Authorization, String
     path :account_id, Integer
-    query :locale, String, default: "zh-CN"
-    query :page, Integer, default: -> { 1 }
+    query :locale, String, default: "zh-CN", transform: -> { it.downcase }
+    query :key_number, Integer, default: -> { it + 1 }, px: :key
 
     form data: {
-      name!: String,
-      age: Integer,
+      name!: { type: String, transform: :strip },
       birthday: Date,
       admin: { type: :boolean, default: false },
-      tags: [String],
-      profile: {
-        nickname!: String
-      }
+      tags: [{ id: Integer, content!: { type: String, blank: false } }],
+      profile: { nickname!: String }
     }
 
-    response 200, desc: "success"
+    response 200, "success", :json, data: { code: Integer, result: [Hash] }
+    errors 400, "client errors", {
+      invalid_params: { code: 1234, message: "parameters are invalid" },
+      missing_params: { code: 1235, message: "parameters are missing" }
+    }
   }
   def create
-    User.create!(
-      account_id: px[:account_id], name: px[:name],
+    User.find(px[:account_id]).update!(
+      key: px[:key], name: px[:name],
       **px.slice(:birthday, :admin, :profile)
     )
   end
@@ -385,20 +387,36 @@ json data: {
 7. `DateTime`
 8. `Time`
 9. `File`
-10. `Object`
+10. `Object` / `Hash`
 
-嵌套写法：
+```ruby
+query :page, Integer
+form data: { file: File }
+```
+
+Object / 嵌套 Object 写法：
 
 ```ruby
 json data: {
-  tags: [String],
-  profile: {
-    nickname!: String
-  },
-  settings: { type: Object },
-  users: [{ id: Integer }]
+  settings: Object,
+  # == settings: { type: Object }
+  # == settings: { type: Hash }
+  # == settings: { type: { } }
+
+  profile: { nickname!: String },
+  tags: [],
+  # == tags: { type: [] }
+  foo: [{ id: Integer }],
+
+  users: {
+    type: { name!: String },
+    default: { name: "Tom" },
+    transform: -> { { name: it[:name].downcase } }
+  }
 }
 ```
+
+当你写 `xx: { type: ... }` 时，`xx` 的类型由 `type` 决定。换句话说，这里的 `type` 是 schema 的保留关键字，不是一个普通的嵌套字段名。
 
 #### 3. 字段选项
 
@@ -413,12 +431,37 @@ query :title, String, blank: false # or allow_blank: false
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
 query :request_id, String, px_key: :trace_id
+query :end_at, Integer, validate: -> { it >= px[:start_at] }
 ```
 
 说明：
 
 1. `transform` 支持传入 `Symbol` 或 `Proc`，会在**类型转换之后**、写入 `px` 之前执行。
 2. `px` 和 `px_key` 用来定制参数写入 `px` 时使用的 key 名；`px` 是 `px_key` 的简写。
+3. `validate` 支持传入 `Proc`，并且会在**所有参数都完成解析、类型转换、transform、写入 `px` 之后**再执行。
+4. `validate` 的执行环境就是当前 controller，所以可以读取 `px`，也可以直接调用 `current_user` 这类方法。
+5. 当 `validate` 返回 `false` 或 `nil` 时，会为该字段追加一个 `invalid` 错误。
+
+关于嵌套对象字段
+
+内层字段的 option 会先执行，外层对象字段最后执行。  
+也就是说，嵌套字段上的 `transform` / `px` 会先参与对象构建，等整个对象构建完成后，外层字段才会拿到这份对象继续处理。  
+等整棵对象都完成解析、类型转换、transform，才会进入后置 `validate` 阶段：也是内层字段的 `validate` 先执行，外层对象字段的 `validate` 后执行。
+
+```ruby
+json data: {
+  user: {
+    type: {
+      name: { type: String, transform: :strip, px: :nickname },
+      age: { type: Integer, px: :age1 },
+      seq: { type: Integer, validate: -> { it > px[:user][:age2] } }
+    },
+    transform: -> { { name: it[:nickname].downcase, age2: it[:age1] } }
+  },
+}
+
+px[:user] # => { "name" => "tom" }
+```
 
 这些选项仅用于 OpenAPI 文档生成：
 
@@ -567,12 +610,13 @@ px.scope[:query]
 px.scope[:body]
 px.scope[:headers]
 px.scope[:cookies]
+px.scope[:the_scope_you_defined]
 ```
 
 说明：
 
 1. 所有声明在 path/query/body 上的字段，都会同时铺平到顶层 `px[:field]`
-2. `scope(:name)` 定义的自定义分组也会出现在 `px.scope[:name]`
+2. `px` 本身是一个 `ActiveSupport::HashWithIndifferentAccess`，嵌套对象值例如 `px[:profile]` 也同样会返回 indifferent hash
 3. header 和 cookie 不会作为顶层快捷 key 暴露；例如 `px[:Authorization]` 不能直接读取 header
 4. header key 内部会按小写 dashed 形式存储，但读取时兼容 `Authorization`、`HTTP_AUTHORIZATION` 这类原始写法，例如：
    ```ruby
@@ -581,6 +625,28 @@ px.scope[:cookies]
    px.scope[:headers]["HTTP_AUTHORIZATION"]
    ```
 5. 原始 `params` 不会被回写修改
+
+### `px` 是白名单提取
+
+```ruby
+json data: {
+  profile: {
+    nickname: String
+  }
+}
+
+# request params
+{
+  profile: {
+    nickname: "Neo",
+    role: "admin"
+  }
+}
+
+px[:profile] # => { "nickname" => "Neo" }
+```
+
+未声明的字段不会进入 `px`，嵌套对象里的额外 key 也会被过滤掉。
 
 ### 错误处理
 
@@ -668,13 +734,14 @@ ActionSpec.configure { |config|
 
 当你使用 AI 生成 Rails controller 代码，并且涉及参数校验、参数类型转换、参数默认值等情况时，下面这些约定更适合配合 ActionSpec：
 
-1. 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行
-2. `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`
-3. 对于批量声明的参数，在数量小于等于 3 个，并且没有 hash 嵌套时，优先写成一行，例如：
+- 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行
+- `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`
+- 对于批量声明的参数，在数量小于等于 3 个，并且没有 hash 嵌套时，优先写成一行，例如：
    - `json data: { type: String, required: true }`
    - `in_query(name: String, value: String)`（优先使用 `in_xxx(...)` 这类批量声明，而不是拆成多行 `xx` DSL）
-4. 用 `doc_dry`、`scope` 和 `transform`、`px(px_key)`、`px.slice` 来简化 controller 代码
-5. 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码
+- 使用 `!` 而不是 `required: true`
+- 用 `doc_dry`、`scope` 和 `transform`、`px(px_key)`、`px.slice` 来简化 controller 代码
+- 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码
 
 ## 当前还没实现的部分
 
