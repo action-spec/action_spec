@@ -24,7 +24,7 @@ module ActionSpec
             result:,
             path:
           ).resolve
-          output[field.name] = resolved unless resolved.equal?(Schema::Missing)
+          output[field.output_name] = resolved unless resolved.equal?(Schema::Missing)
         end
         output.presence || (source.present? ? output : Schema::Missing)
       end

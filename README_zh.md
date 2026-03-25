@@ -14,11 +14,14 @@ Concise and Powerful API Documentation Solution for Rails.
 2. [Doc DSL](#doc-dsl)
    1. [`doc`](#doc)
    2. [`doc_dry`](#doc_dry)
-   3. [`openapi false`](#openapi-false)
-   4. [`tag`](#tag)
-   5. [DSL 详细说明](#dsl-详细说明)
+   3. [`doc` 内的 DSL](#doc-内的-dsl)
+      1. [Parameter](#1-parameter)
+      2. [request body](#2-request-body)
+      3. [`openapi false`](#3-openapi-false)
+      4. [Scope](#4-scope)
+      5. [response](#5-response)
 3. [Schemas](#schemas)
-   1. [声明一个字段为必填项](#1-声明字段为必填项required)
+   1. [声明字段为必填项（required）](#1-声明字段为必填项required)
    2. [字段类型](#2-字段类型)
    3. [字段选项](#3-字段选项)
    4. [从 ActiveRecord 生成 Schemas](#4-从-activerecord-生成-schemas)
@@ -93,7 +96,7 @@ bin/rails action_spec:gen
 docs/openapi.yml
 ```
 
-如果只是临时执行一次，也可以用环境变量覆盖默认输出路径和文档元信息：
+也可以用环境变量覆盖默认输出路径和文档元信息：
 
 ```bash
 bin/rails action_spec:gen \
@@ -147,6 +150,18 @@ def create
 end
 ```
 
+通过 `tag:` 可以覆盖默认的 OpenAPI tag。默认 tag 使用路由对应的 `controller_path`：
+
+```ruby
+doc_dry(:index, tag: "backoffice")
+
+doc("用户列表", tag: "members") {
+  query :status, String
+}
+```
+
+生成出来的 OpenAPI operation 还会带上 `operationId`，它会基于最终的 tag 和 action 名组合而成，例如 `members_index` 或 `users_create`。
+
 ### `doc_dry`
 
 ```ruby
@@ -164,29 +179,7 @@ end
 
 对应 action 的 dry 声明会先应用，再应用当前 `doc` 自己的声明。
 
-### `openapi false`
-
-如果你希望某个 action 不进入 OpenAPI 文档，也可以在 `doc` 或 `doc_dry` 中这样写：
-
-```ruby
-doc {
-  openapi false
-}
-```
-
-### `tag`
-
-OpenAPI tag 默认使用路由对应的 `controller_path`，也可以通过 `doc(tag:)` 或 `doc_dry(tag:)` 覆盖。
-
-```ruby
-doc_dry(:index, tag: "backoffice")
-
-doc("用户列表", tag: "members") {
-  query :status, String
-}
-```
-
-### DSL 详细说明
+### `doc` 内的 DSL
 
 #### 1. Parameter
 
@@ -273,13 +266,13 @@ data :file, File
    - 字段校验和转换时，则不区分 media type（统一从 Rails `params` 中取值）
 2. `body!`、`json!`、`form!` 会把根级 request body 标记为必填；如果你不想使用 bang，也可以在 `body`、`json`、`form` 上写 `required: true`。
 
-#### 3. OpenAPI
+#### 3. `openapi false`
+
+如果你希望某个 action 不进入 OpenAPI 文档，也可以在 `doc` 或 `doc_dry` 中这样写：
 
 ```ruby
 openapi false
 ```
-
-当某个 action 不应该出现在生成的 OpenAPI 文档中时，可以这样声明。放在 `doc_dry` 里也同样有效。
 
 #### 4. Scope
 
@@ -388,8 +381,6 @@ json data: {
 
 #### 3. 字段选项
 
-这些选项当前会参与运行时校验：
-
 ```ruby
 query :page, Integer, default: 1
 query :today, Date, default: -> { Time.current.to_date }
@@ -397,7 +388,16 @@ query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 query :title, String, blank: false # or allow_blank: false
+
+query :nickname, String, transform: :downcase
+query :page, Integer, transform: -> { it + 1 }, px: :page_number
+query :request_id, String, px_key: :trace_id
 ```
+
+说明：
+
+1. `transform` 支持传入 `Symbol` 或 `Proc`，会在**类型转换之后**、写入 `px` 之前执行。
+2. `px` 和 `px_key` 用来定制参数写入 `px` 时使用的 key 名；`px` 是 `px_key` 的简写。
 
 这些选项仅用于 OpenAPI 文档生成：
 
@@ -515,7 +515,7 @@ before_action :validate_and_coerce_params!
 
 `px` 里存的是 ActionSpec 处理后的值。使用 `validate_params!` 时会保留原始值；使用 `validate_and_coerce_params!` 时则是转换后的值。
 
-这也意味着你可以继续使用 `px.slice(...)` 这类 hash 方法，来简化参数取值代码。
+`px` 是一个 Hash，这也意味着你可以继续使用 `px.slice(...)` 这类 hash 方法，来简化参数取值代码。
 
 ```ruby
 px[:id]
@@ -594,33 +594,13 @@ ActionSpec.configure { |config|
 
 当前可配置项：
 
-1. `invalid_parameters_exception_class`
-   默认值：`ActionSpec::InvalidParameters`。
-   用来指定校验失败时抛出的异常类型。
-
-2. `error_messages`
-   默认值：`{}`。
-   用来按错误类型，或者按“字段 + 错误类型”的粒度覆写错误消息。
-
-3. `open_api_output`
-   默认值：`"docs/openapi.yml"`。
-   用来指定 `bin/rails action_spec:gen` 生成文档时的默认输出路径。
-
-4. `open_api_title`
-   默认值：`nil`。
-   用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.title`。
-
-5. `open_api_version`
-   默认值：`nil`。
-   用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.version`。
-
-6. `open_api_server_url`
-   默认值：`nil`。
-   用来指定生成文档里的默认 server URL。
-
-7. `default_response_media_type`
-   默认值：`:json`。
-   用来指定 `response`、`error`、`errors` 在未显式传入 media type 时使用的默认响应 media type。
+1. `invalid_parameters_exception_class`：默认值 `ActionSpec::InvalidParameters`，用来指定校验失败时抛出的异常类型。
+2. `error_messages`：默认值 `{}`，用来按错误类型，或者按“字段 + 错误类型”的粒度覆写错误消息。
+3. `open_api_output`：默认值 `"docs/openapi.yml"`，用来指定 `bin/rails action_spec:gen` 生成文档时的默认输出路径。
+4. `open_api_title`：默认值 `nil`，用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.title`。
+5. `open_api_version`：默认值 `nil`，用来指定 `bin/rails action_spec:gen` 生成的 OpenAPI 文档 `info.version`。
+6. `open_api_server_url`：默认值 `nil`，用来指定生成文档里的默认 server URL。
+7. `default_response_media_type`：默认值 `:json`，用来指定 `response`、`error`、`errors` 在未显式传入 media type 时使用的默认响应 media type。
 
 ### I18n
 
@@ -654,13 +634,13 @@ ActionSpec.configure { |config|
 
 当你使用 AI 生成 Rails controller 代码，并且涉及参数校验、参数类型转换、参数默认值等情况时，下面这些约定更适合配合 ActionSpec：
 
-1. 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行。
-2. `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`。
+1. 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行
+2. `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`
 3. 对于批量声明的参数，在数量小于等于 3 个，并且没有 hash 嵌套时，优先写成一行，例如：
    - `json data: { type: String, required: true }`
    - `in_query(name: String, value: String)`（优先使用 `in_xxx(...)` 这类批量声明，而不是拆成多行 `xx` DSL）
-4. 优先使用 `doc_dry`、`scope` 和 `px.slice` 来减少 controller 里的重复代码。
-5. 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码。
+4. 用 `doc_dry`、`scope` 和 `transform`、`px(px_key)`、`px.slice` 来简化 controller 代码
+5. 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码
 
 ## 当前还没实现的部分
 

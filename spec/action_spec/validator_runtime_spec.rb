@@ -218,4 +218,54 @@ RSpec.describe ActionSpec::Validator do
     expect(px[:price]).to eq(BigDecimal("12.5"))
     expect(px[:published_at]).to eq(DateTime.iso8601("2025-10-17T12:30:00Z"))
   end
+
+  it "applies transform and custom px keys after coercion" do
+    controller = build_controller do
+      doc :create do
+        query :page, Integer, transform: ->(value) { value + 1 }, px: :page_number
+        query :slug, String, transform: :upcase, px_key: :slug_value
+        header :X_Request_Id, String, px_key: :request_id
+
+        scope :search do
+          query :term, String, transform: :strip, px: :keyword
+        end
+
+        json data: {
+          profile!: {
+            nickname: { type: String, transform: ->(value) { value.strip.downcase }, px_key: :handle }
+          }
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, { "X-Request-Id" => "req-1" })
+    params = ActionController::Parameters.new(
+      page: "2",
+      slug: "neo",
+      term: "  ruby  ",
+      profile: { nickname: "  Neo  " }
+    )
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+
+    px = result.px
+
+    expect(px[:page_number]).to eq(3)
+    expect(px[:slug_value]).to eq("NEO")
+    expect(px).not_to have_key("page")
+    expect(px).not_to have_key("slug")
+    expect(px[:profile]).to eq("handle" => "neo")
+    expect(px.scope[:query]).to include(page_number: 3, slug_value: "NEO", keyword: "ruby")
+    expect(px.scope[:headers]).to include(request_id: "req-1")
+    expect(px.scope[:search]).to include(keyword: "ruby")
+  end
 end

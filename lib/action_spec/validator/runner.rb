@@ -85,6 +85,7 @@ module ActionSpec
         end
 
         def storage_key(field, location)
+          return field.output_name if field.px_key.present?
           return field.name.to_s.tr("_", "-").downcase if location == :headers
 
           field.name

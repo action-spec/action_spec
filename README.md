@@ -10,27 +10,30 @@ Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md
 
 ## Table Of Contents
 
-- [OpenAPI Generation](#openapi-generation)
-- [Doc DSL](#doc-dsl)
-  - [`doc`](#doc)
-  - [`doc_dry`](#doc_dry)
-  - [`openapi false`](#openapi-false)
-  - [`tag`](#tag)
-  - [DSL Reference](#dsl-reference)
-- [Schemas](#schemas)
-  - [Declare A Required Field](#declare-a-required-field)
-  - [Field Types](#field-types)
-  - [Field Options](#field-options)
-  - [Schemas From ActiveRecord](#schemas-from-activerecord)
-  - [Type And Boundary Matrix](#type-and-boundary-matrix)
-- [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
-  - [Validation Flow](#validation-flow)
-  - [Reading Processed Values With `px`](#reading-processed-values-with-px)
-  - [Errors](#errors)
-- [Configuration And I18n](#configuration-and-i18n)
-  - [Configuration](#configuration)
-  - [I18n](#i18n)
-- [AI Generation Style Guide](#ai-generation-style-guide)
+1. [OpenAPI Generation](#openapi-generation)
+2. [Doc DSL](#doc-dsl)
+   1. [`doc`](#doc)
+   2. [`doc_dry`](#doc_dry)
+   3. [DSL Inside `doc`](#dsl-inside-doc)
+      1. [Parameter](#parameter)
+      2. [request body](#request-body)
+      3. [`openapi false`](#openapi-false)
+      4. [Scope](#scope)
+      5. [Response](#response)
+3. [Schemas](#schemas)
+   1. [Declare A Required Field](#declare-a-required-field)
+   2. [Field Types](#field-types)
+   3. [Field Options](#field-options)
+   4. [Schemas From ActiveRecord](#schemas-from-activerecord)
+   5. [Type And Boundary Matrix](#type-and-boundary-matrix)
+4. [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
+   1. [Validation Flow](#validation-flow)
+   2. [Reading Processed Values With `px`](#reading-processed-values-with-px)
+   3. [Errors](#errors)
+5. [Configuration And I18n](#configuration-and-i18n)
+   1. [Configuration](#configuration)
+   2. [I18n](#i18n)
+6. [AI Generation Style Guide](#ai-generation-style-guide)
 
 ## Example
 
@@ -93,7 +96,7 @@ By default, this writes to:
 docs/openapi.yml
 ```
 
-For one-off runs, environment variables can override the default output path and document metadata:
+Environment variables can override the default output path and document metadata:
 
 ```bash
 bin/rails action_spec:gen \
@@ -147,6 +150,18 @@ def create
 end
 ```
 
+Override the default OpenAPI tag with `tag:`. By default, the tag comes from the routed `controller_path`:
+
+```ruby
+doc_dry(:index, tag: "backoffice")
+
+doc("List users", tag: "members") {
+  query :status, String
+}
+```
+
+Generated OpenAPI operations also include an `operationId`, built from the final tag plus the action name, for example `members_index` or `users_create`.
+
 ### `doc_dry`
 
 ```ruby
@@ -164,31 +179,7 @@ end
 
 All matching dry blocks are applied before the action-specific `doc`.
 
-### `openapi false`
-
-You can also opt an action out of OpenAPI generation from either `doc` or `doc_dry`:
-
-```ruby
-doc {
-  openapi false
-}
-```
-
-### `tag`
-
-OpenAPI tags can also be set at either level:
-
-```ruby
-doc_dry(:index, tag: "backoffice")
-
-doc("List users", tag: "members") {
-  query :status, String
-}
-```
-
-Generated OpenAPI operations also include an `operationId`, built from the final tag plus the action name, for example `members_index` or `users_create`.
-
-### DSL Reference
+### DSL Inside `doc`
 
 #### Parameter
 
@@ -277,13 +268,13 @@ Notes:
 
 `body!`, `json!`, and `form!` make the root request body required at runtime. You can also write `required: true` on `body`, `json`, or `form` if you prefer not to use bang methods.
 
-#### OpenAPI
+#### `openapi false`
+
+You can also opt an action out of OpenAPI generation from either `doc` or `doc_dry`:
 
 ```ruby
 openapi false
 ```
-
-Use this when an action should stay out of the generated OpenAPI document. It also works inside `doc_dry`.
 
 #### Scope
 
@@ -389,8 +380,6 @@ json data: {
 
 #### Field Options
 
-These options are currently used by the validator:
-
 ```ruby
 query :page, Integer, default: 1
 query :today, Date, default: -> { Time.current.to_date }
@@ -398,7 +387,16 @@ query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 query :title, String, blank: false # or allow_blank: false
+
+query :nickname, String, transform: :downcase
+query :page, Integer, transform: -> { it + 1 }, px: :page_number
+query :request_id, String, px_key: :trace_id
 ```
+
+Notes:
+
+- `transform` accepts a `Symbol` or a `Proc` and runs **after coercion**, before the value is written into `px`
+- `px` and `px_key` customize the key name written into `px`; `px` is the short form of `px_key`
 
 These options are used by OpenAPI generation:
 
@@ -597,33 +595,13 @@ ActionSpec.configure { |config|
 
 Available config keys:
 
-- `invalid_parameters_exception_class`
-  Default: `ActionSpec::InvalidParameters`.
-  Controls which exception class is raised when validation fails.
-
-- `error_messages`
-  Default: `{}`.
-  Lets you override error messages by error type, or by attribute plus error type.
-
-- `open_api_output`
-  Default: `"docs/openapi.yml"`.
-  Controls where `bin/rails action_spec:gen` writes the generated OpenAPI document.
-
-- `open_api_title`
-  Default: `nil`.
-  Sets the default OpenAPI `info.title` used by `bin/rails action_spec:gen`.
-
-- `open_api_version`
-  Default: `nil`.
-  Sets the default OpenAPI `info.version` used by `bin/rails action_spec:gen`.
-
-- `open_api_server_url`
-  Default: `nil`.
-  Sets the default server URL emitted in the generated OpenAPI document.
-
-- `default_response_media_type`
-  Default: `:json`.
-  Sets the default response media type used by `response`, `error`, and `errors` when no media type is passed explicitly.
+- `invalid_parameters_exception_class`: Default `ActionSpec::InvalidParameters`; controls which exception class is raised when validation fails.
+- `error_messages`: Default `{}`; lets you override error messages by error type, or by attribute plus error type.
+- `open_api_output`: Default `"docs/openapi.yml"`; controls where `bin/rails action_spec:gen` writes the generated OpenAPI document.
+- `open_api_title`: Default `nil`; sets the default OpenAPI `info.title` used by `bin/rails action_spec:gen`.
+- `open_api_version`: Default `nil`; sets the default OpenAPI `info.version` used by `bin/rails action_spec:gen`.
+- `open_api_server_url`: Default `nil`; sets the default server URL emitted in the generated OpenAPI document.
+- `default_response_media_type`: Default `:json`; sets the default response media type used by `response`, `error`, and `errors` when no media type is passed explicitly.
 
 ### I18n
 
@@ -662,7 +640,7 @@ When using AI tools to generate Rails controller code, and the change involves p
 - when a batch has 3 fields or fewer and does not contain nested hashes, prefer a single-line style, for example:
   - `json data: { type: String, required: true }`
   - `in_query(name: String, value: String)` (prefer `in_xxx(...)` batch declarations over multiple `xx` DSL lines when possible)
-- use `doc_dry`, `scope`, and `px.slice` to reduce repetition in controllers
+- use `doc_dry`, `scope`, and `transform`、`px(px_key)`、`px.slice` to keep controller concise
 - when request parameters match model declarations, prefer `.schemas` to keep `doc` concise
 
 ## What Is Not Implemented Yet

@@ -18,7 +18,7 @@ module ActionSpec
         return resolve_nil if value.nil?
         return resolve_blank if blank_disallowed?
 
-        schema.cast(value, context:, coerce:, result:, path:)
+        finalize(schema.cast(value, context:, coerce:, result:, path:))
       end
 
       private
@@ -39,10 +39,10 @@ module ActionSpec
 
         def resolve_missing
           if schema.default.respond_to?(:call)
-            return schema.cast(evaluate_default(schema.default), context:, coerce:, result:, path:)
+            return finalize(schema.cast(evaluate_default(schema.default), context:, coerce:, result:, path:))
           end
-          return schema.cast(schema.default, context:, coerce:, result:, path:) unless schema.default.nil?
-          return schema.materialize_missing(context:, coerce:, result:, path:) unless field.required?
+          return finalize(schema.cast(schema.default, context:, coerce:, result:, path:)) unless schema.default.nil?
+          return finalize(schema.materialize_missing(context:, coerce:, result:, path:)) unless field.required?
 
           result.add_error(path.join("."), :required)
           Schema::Missing
@@ -60,6 +60,12 @@ module ActionSpec
 
         def blank_disallowed?
           !schema.blank_allowed? && value.respond_to?(:blank?) && value.blank?
+        end
+
+        def finalize(resolved)
+          return resolved if resolved.equal?(Schema::Missing)
+
+          field.transform_value(resolved, context:)
         end
 
         def evaluate_default(default_proc)
