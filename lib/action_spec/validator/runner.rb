@@ -16,6 +16,7 @@ module ActionSpec
         merge_body!(result)
         merge_group!(result, endpoint.request.header, source: header_source, location: :headers)
         merge_group!(result, endpoint.request.cookie, source: cookie_source, location: :cookies)
+        result.apply_scope_options!(endpoint.request.scope_options)
         result
       end
 

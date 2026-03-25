@@ -296,6 +296,27 @@ Then read it from `px.scope`:
 px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```
 
+You can also trim custom scope buckets with `compact:` or `compact_blank:`:
+
+```ruby
+doc {
+  scope(:search, compact: true) {
+    query :page, Integer, transform: -> { nil }, px: :page_number
+    query :keyword, String
+  }
+
+  scope(:filters, compact_blank: true) {
+    query :q, String, transform: :strip
+    query :nickname, String, transform: -> { "" }
+  }
+}
+
+px.scope[:search]  # => { keyword: "rails" }
+px.scope[:filters] # => { q: "ruby" }
+```
+
+These options only apply to the custom `px.scope[:name]` bucket defined by that `scope`, and use shallow hash compaction.
+
 #### Response 
 
 ```ruby
@@ -434,10 +455,16 @@ You can also limit the exported fields:
 User.schemas(only: %i[name phone role])
 ```
 
+`bang:` defaults to `true`, so required fields are emitted as bang keys such as `"name!"`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
+
+```ruby
+User.schemas(bang: false)
+```
+
 ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel when available, including:
 
 - field type
-- requiredness, rendered as bang keys such as `"name!"`
+- requiredness, rendered either as bang keys such as `"name!"` or as `required: true` when `bang: false`
 - enum values from `enum`
 - `default`
 - `desc` from column comments
@@ -452,6 +479,13 @@ User.schemas
 # {
 #   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
 #   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   "role" => { type: String, enum: %w[admin member visitor] }
+# }
+
+User.schemas(bang: false)
+# {
+#   "name" => { type: String, required: true, desc: "user name", length: { maximum: 20 } },
+#   "phone" => { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
 #   "role" => { type: String, enum: %w[admin member visitor] }
 # }
 ```

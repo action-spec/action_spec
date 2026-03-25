@@ -38,7 +38,7 @@ module ActionSpec
     end
 
     class Request
-      attr_reader :header, :path, :query, :cookie, :body, :body_media_types
+      attr_reader :header, :path, :query, :cookie, :body, :body_media_types, :scope_options
 
       def initialize
         @header = Location.new(:header)
@@ -47,6 +47,7 @@ module ActionSpec
         @cookie = Location.new(:cookie)
         @body = Location.new(:body)
         @body_media_types = {}
+        @scope_options = ActiveSupport::HashWithIndifferentAccess.new
         @body_required = false
       end
 
@@ -61,6 +62,16 @@ module ActionSpec
       def add_body(media_type, field)
         body.add(field)
         (@body_media_types[media_type.to_sym] ||= Location.new(media_type.to_sym)).add(field.copy)
+      end
+
+      def register_scope(name, compact: nil, compact_blank: nil)
+        key = name.to_sym
+        @scope_options[key] = scope_options.fetch(key, {}).merge(
+          {
+            compact:,
+            compact_blank:
+          }.compact
+        )
       end
 
       def require_body!
@@ -78,6 +89,7 @@ module ActionSpec
         @cookie = other.cookie
         @body = other.body
         @body_media_types = other.body_media_types
+        @scope_options = other.scope_options
         @body_required = other.body_required?
       end
 
@@ -92,6 +104,7 @@ module ActionSpec
             :@body_media_types,
             body_media_types.transform_values(&:copy)
           )
+          request.instance_variable_set(:@scope_options, scope_options.deep_dup)
           request.instance_variable_set(:@body_required, body_required?)
         end
       end

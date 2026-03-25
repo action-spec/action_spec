@@ -60,6 +60,27 @@ RSpec.describe ActionSpec::Doc do
     expect(endpoint.request.body.field(:name).scopes).to eq([:user])
   end
 
+  it "tracks custom scope options declared on scope blocks" do
+    controller = build_controller do
+      doc :create do
+        scope :user, compact: true do
+          query :user_id, Integer
+        end
+
+        scope :profile, compact_blank: true do
+          query :nickname, String
+        end
+      end
+
+      def create; end
+    end
+
+    endpoint = controller.action_spec_for(:create)
+
+    expect(endpoint.request.scope_options[:user].symbolize_keys).to eq(compact: true)
+    expect(endpoint.request.scope_options[:profile].symbolize_keys).to eq(compact_blank: true)
+  end
+
   it "supports required: true without bang syntax for params, nested fields, and body" do
     controller = build_controller do
       doc :create do

@@ -30,6 +30,16 @@ module ActionSpec
       Array(scopes).each { |scope_name| scope_bucket(scope_name)[key] = value }
     end
 
+    def apply_scope_options!(options_by_scope)
+      options_by_scope.each do |scope_name, options|
+        bucket = px.scope[scope_name]
+        next unless bucket
+
+        bucket.compact! if options[:compact]
+        bucket.delete_if { |_key, value| value.blank? } if options[:compact_blank]
+      end
+    end
+
     def add_error(attribute, type, **options)
       if (message = ActionSpec.config.message_for(attribute, type, options))
         errors.add(attribute, message)

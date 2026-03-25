@@ -294,6 +294,27 @@ doc {
 px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```
 
+也可以通过 `compact:` 或 `compact_blank:` 对自定义 scope bucket 做裁剪：
+
+```ruby
+doc {
+  scope(:search, compact: true) {
+    query :page, Integer, transform: -> { nil }, px: :page_number
+    query :keyword, String
+  }
+
+  scope(:filters, compact_blank: true) {
+    query :q, String, transform: :strip
+    query :nickname, String, transform: -> { "" }
+  }
+}
+
+px.scope[:search]  # => { keyword: "rails" }
+px.scope[:filters] # => { q: "ruby" }
+```
+
+这两个选项只会作用在该 `scope` 定义出来的自定义 `px.scope[:name]` bucket 上，并且采用浅层 hash 裁剪。
+
 #### 5. response
 
 ```ruby
@@ -435,10 +456,16 @@ User.schemas
 User.schemas(only: %i[name phone role])
 ```
 
+`bang:` 默认是 `true`，所以必填字段会输出成 `"name!"` 这样的 bang key。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
+
+```ruby
+User.schemas(bang: false)
+```
+
 ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的信息，包括：
 
 1. 字段类型
-2. 必填状态，并输出成 `"name!"` 这样的 bang key
+2. 必填状态；默认输出成 `"name!"` 这样的 bang key，而在 `bang: false` 时输出成 `required: true`
 3. `enum` 定义
 4. `default`
 5. 列注释对应的 `desc`
@@ -453,6 +480,13 @@ User.schemas
 # {
 #   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
 #   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   "role" => { type: String, enum: %w[admin member visitor] }
+# }
+
+User.schemas(bang: false)
+# {
+#   "name" => { type: String, required: true, desc: "user name", length: { maximum: 20 } },
+#   "phone" => { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
 #   "role" => { type: String, enum: %w[admin member visitor] }
 # }
 ```

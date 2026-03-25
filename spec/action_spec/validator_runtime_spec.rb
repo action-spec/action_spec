@@ -117,6 +117,52 @@ RSpec.describe ActionSpec::Validator do
     expect(px.scope[:user]).to include(user_id: 9, name: "Tom", admin: true)
   end
 
+  it "supports compact and compact_blank on custom scopes" do
+    controller = build_controller do
+      doc :create do
+        scope :trimmed, compact: true do
+          query :page, Integer, transform: -> { nil }, px: :page_number
+          query :keyword, String
+        end
+
+        scope :present_only, compact_blank: true do
+          query :q, String, transform: :strip
+          query :nickname, String, transform: -> { "" }
+          json data: {
+            tagline: { type: String, transform: -> { "" } }
+          }
+        end
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(
+      page: "2",
+      keyword: "rails",
+      q: "  ruby  ",
+      nickname: "Neo",
+      tagline: "  "
+    )
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+
+    px = result.px
+
+    expect(px.scope[:trimmed].to_h).to eq("keyword" => "rails")
+    expect(px.scope[:present_only].to_h).to eq("q" => "ruby")
+    expect(px.scope[:query]).to include(page_number: nil, keyword: "rails", q: "ruby", nickname: "")
+    expect(px.scope[:body]).to include(tagline: "")
+  end
+
   it "coerces values into px without mutating params" do
     file = Tempfile.new("action-spec")
     uploaded_file = ActionDispatch::Http::UploadedFile.new(

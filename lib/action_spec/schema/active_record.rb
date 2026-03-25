@@ -6,12 +6,12 @@ module ActionSpec
       extend ActiveSupport::Concern
 
       class_methods do
-        def schemas(only: nil)
+        def schemas(only: nil, bang: true)
           names = selected_column_names(only)
           @action_spec_validator_index = build_validator_index
 
           names.each_with_object(ActiveSupport::OrderedHash.new) do |name, hash|
-            hash[output_name(name)] = schema_definition_for(name)
+            hash[output_name(name, bang:)] = schema_definition_for(name, bang:)
           end
         ensure
           remove_instance_variable(:@action_spec_validator_index) if instance_variable_defined?(:@action_spec_validator_index)
@@ -25,12 +25,13 @@ module ActionSpec
             column_names.select { |name| selected.include?(name) }
           end
 
-          def output_name(name)
-            required_attribute?(name) ? "#{name}!" : name
+          def output_name(name, bang:)
+            bang && required_attribute?(name) ? "#{name}!" : name
           end
 
-          def schema_definition_for(name)
+          def schema_definition_for(name, bang:)
             definition = { type: schema_type_for(name) }
+            definition[:required] = true if required_attribute?(name) && !bang
             definition[:default] = column_default_for(name) unless column_default_for(name).nil?
             definition[:desc] = column_comment_for(name) if column_comment_for(name).present?
             definition[:enum] = resolved_enum_for(name) if resolved_enum_for(name).present?

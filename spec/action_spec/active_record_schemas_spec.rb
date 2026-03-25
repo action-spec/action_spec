@@ -98,6 +98,73 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
   end
 
+  it "can emit required: true instead of bang keys" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: "user name", limit: 20),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: 13),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:phone])]
+    )
+
+    expect(user_class.schemas(bang: false)).to eq(
+      "name" => {
+        type: String,
+        required: true,
+        desc: "user name",
+        length: { maximum: 20 }
+      },
+      "phone" => {
+        type: String,
+        required: true,
+        length: { maximum: 13 }
+      },
+      "role" => {
+        type: String,
+        enum: %w[admin member]
+      }
+    )
+  end
+
+  it "accepts bang-style names in only even when bang output is disabled" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(only: %i[phone! role], bang: false)).to eq(
+      "phone" => { type: String, required: true },
+      "role" => { type: String, enum: %w[admin member] }
+    )
+  end
+
   it "indexes validators once instead of rescanning them per field" do
     user_class = Class.new(ActiveRecord::Base) do
       include ActionSpec::Schema::ActiveRecord

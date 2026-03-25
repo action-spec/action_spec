@@ -56,7 +56,8 @@ module ActionSpec
         add_body(:form, { name => options.merge(type:) })
       end
 
-      def scope(name, &block)
+      def scope(name, compact: nil, compact_blank: nil, &block)
+        endpoint.request.register_scope(name, compact:, compact_blank:)
         scopes.push(name.to_sym)
         instance_exec(&block)
       ensure
