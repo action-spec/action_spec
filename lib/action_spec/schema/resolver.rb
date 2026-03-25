@@ -15,6 +15,9 @@ module ActionSpec
       def resolve
         return resolve_missing unless present?
 
+        return resolve_nil if value.nil?
+        return resolve_blank if blank_disallowed?
+
         schema.cast(value, context:, coerce:, result:, path:)
       end
 
@@ -43,6 +46,20 @@ module ActionSpec
 
           result.add_error(path.join("."), :required)
           Schema::Missing
+        end
+
+        def resolve_nil
+          result.add_error(path.join("."), field.required? ? :required : :blank)
+          Schema::Missing
+        end
+
+        def resolve_blank
+          result.add_error(path.join("."), :blank)
+          Schema::Missing
+        end
+
+        def blank_disallowed?
+          !schema.blank_allowed? && value.respond_to?(:blank?) && value.blank?
         end
 
         def evaluate_default(default_proc)

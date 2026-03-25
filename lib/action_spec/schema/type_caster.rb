@@ -25,7 +25,7 @@ module ActionSpec
           return cast_decimal(value) if normalized == :decimal
 
           active_model_type_for(normalized).cast(value).tap do |casted|
-            raise CastError, normalized if casted.nil? && value.present?
+            raise CastError, normalized if casted.nil? && !value.nil?
           end
         end
 

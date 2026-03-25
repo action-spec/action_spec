@@ -1,4 +1,4 @@
-# ActionSpec [WIP]
+# ActionSpec
 
 Concise and Powerful API Documentation Solution for Rails.
 
@@ -18,7 +18,7 @@ Concise and Powerful API Documentation Solution for Rails.
    4. [`tag`](#tag)
    5. [DSL 详细说明](#dsl-详细说明)
 3. [Schemas](#schemas)
-   1. [声明一个字段为必填项](#1-声明一个字段为必填项)
+   1. [声明一个字段为必填项](#1-声明字段为必填项required)
    2. [字段类型](#2-字段类型)
    3. [字段选项](#3-字段选项)
    4. [从 ActiveRecord 生成 Schemas](#4-从-activerecord-生成-schemas)
@@ -59,10 +59,8 @@ class UsersController < ApplicationController
   }
   def create
     User.create!(
-      account_id: px[:account_id],
-      name: px[:name],
-      birthday: px[:birthday],
-      admin: px[:admin]
+      account_id: px[:account_id], name: px[:name],
+      **px.slice(:birthday, :admin, :profile)
     )
   end
 end
@@ -206,7 +204,16 @@ cookie  :remember_token, String
 cookie! :remember_token, String
 ```
 
-bang 方法表示“必填”。例如 `query! :page, Integer` 表示请求里必须传 `page`。
+bang 方法表示“必填”。例如 `query! :page, Integer` 表示请求里必须传 `page`，并且值不能是 `nil`。如果没有额外声明 `blank: false`，空字符串这类 blank 值仍然允许通过。
+
+如果你不想使用 bang，也可以写 `required: true`：
+
+```ruby
+query :page, Integer, required: true
+json data: {
+  title: { type: String, required: true }
+}
+```
 
 批量声明参数：
 
@@ -247,11 +254,9 @@ body :json, data: { name!: String, age: Integer }
 
 ```ruby
 json data: { name!: String }
-
 json! data: { name!: String }
 
 form data: { file!: File, position: String }
-
 form! data: { file!: File }
 ```
 
@@ -263,8 +268,10 @@ data :file, File
 
 说明：
 
-1. 运行时校验里，`body/body!`、`json/json!`、`form/form!` 最终都会汇总进同一份请求体契约。
-2. `body!`、`json!`、`form!` 目前主要是为了保留 DSL 兼容性；“整个 body 是否 required” 这个根级语义，运行时还没有单独做规则区分。
+1. 多个 `body/body!`、`json/json!`、`form/form!` 声明时：
+   - 同一种 media type 会进行合并，而如果有多种 media type 则 OpenAPI 文档会输出为多种 media type
+   - 字段校验和转换时，则不区分 media type（统一从 Rails `params` 中取值）
+2. `body!`、`json!`、`form!` 会把根级 request body 标记为必填；如果你不想使用 bang，也可以在 `body`、`json`、`form` 上写 `required: true`。
 
 #### 3. OpenAPI
 
@@ -284,6 +291,7 @@ doc {
     query :user_id, Integer
     form data: { name: String }
   }
+  form data: { not_in_scope: String }
 }
 ```
 
@@ -298,7 +306,6 @@ px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```ruby
 response 200, desc: "success"
 response 422, "validation failed"
-resp 400, "bad request"
 error 401, "unauthorized"
 ```
 
@@ -306,7 +313,7 @@ error 401, "unauthorized"
 
 ## Schemas
 
-#### 1. 声明一个字段为必填项
+#### 1. 声明字段为必填项（required）
 
 可以写在参数方法上：
 
@@ -329,7 +336,11 @@ json data: {
 
 1. `query!`、`path!`、`header!`、`cookie!` 表示这个参数本身必填。
 2. `name!:`、`nickname!:` 这种写法表示嵌套对象里的字段必填。
-3. `body!`、`json!`、`form!` 目前是为了保持 DSL 一致性；在当前运行时行为里，它们和不带 `!` 的版本等价。
+3. `body!`、`json!`、`form!` 表示根级 request body 必填。
+
+你也可以用 `required: true` 代替 bang 语法，适用于普通参数、嵌套字段和根级 request body。
+
+在 ActionSpec 里，`required` 的语义是“字段存在，且值不是 `nil`”。它本身不会拦截 blank 字符串；如果你希望 blank 值失败，请使用 `blank: false` 或 `allow_blank: false`。
 
 #### 2. 字段类型
 
@@ -369,18 +380,16 @@ query :today, Date, default: -> { Time.current.to_date }
 query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
+query :title, String, blank: false # or allow_blank: false
 ```
 
-这些选项当前已经用于 OpenAPI 文档生成，但运行时暂未实际使用：
+这些选项仅用于 OpenAPI 文档生成：
 
 1. `desc`
 2. `example`
 3. `examples`
 
-这些选项目前在运行时校验和 OpenAPI 文档生成里都还没有实际使用：
-
-4. `allow_nil`
-5. `allow_blank`
+另外，如果 default 等 OpenAPI 选项，无法被转化为 YAML 时（比如 `default: -> { ... }`）），不会将其输出到 OpenAPI 文档中。
 
 #### 4. 从 ActiveRecord 生成 Schemas
 
@@ -489,6 +498,7 @@ before_action :validate_and_coerce_params!
 ### `px` 里的值怎么读
 
 `px` 里存的是 ActionSpec 处理后的值。使用 `validate_params!` 时会保留原始值；使用 `validate_and_coerce_params!` 时则是转换后的值。
+
 这也意味着你可以继续使用 `px.slice(...)` 这类 hash 方法，来简化参数取值代码。
 
 ```ruby
@@ -596,25 +606,25 @@ ActionSpec.configure { |config|
 ActionSpec 基于 `ActiveModel::Errors` 工作，所以你可以覆写消息和字段名：
 
 ```yml
-en:
+zh-CN:
   activemodel:
     attributes:
       action_spec/parameters:
-        "profile.nickname": "Profile nickname"
+        "profile.nickname": "资料昵称"
     errors:
       messages:
-        required: "is required"
-        invalid_type: "must be a valid %{expected}"
+        required: "不能为空"
+        invalid_type: "必须是合法的 %{expected}"
 ```
 
 你也可以直接在 Ruby 里按错误类型或字段覆写消息：
 
 ```ruby
 ActionSpec.configure { |config|
-  config.error_messages[:required] = "must be present"
-  config.error_messages[:invalid_type] = ->(_attribute, options) { "must be a valid #{options.fetch(:expected)}" }
+  config.error_messages[:required] = "不能为空"
+  config.error_messages[:invalid_type] = ->(_attribute, options) { "必须是合法的 #{options.fetch(:expected)}" }
   config.error_messages[:page] = {
-    required: "page is mandatory"
+    required: "页码不能为空"
   }
 }
 ```
@@ -639,7 +649,7 @@ ActionSpec.configure { |config|
 4. parameter 上的 `style`、`explode`、`allowReserved`、`examples`，以及更完整的 header / cookie 序列化控制
 5. request body 的 `encoding`
 6. 除当前 DSL 直接映射之外的更多 request / response media type
-7. response body schema 生成；当前 `response` / `resp` / `error` 只会生成响应描述
+7. response body schema 生成；当前 `response` / `error` 只会生成响应描述
 8. response headers
 9. response links
 10. callbacks
@@ -650,7 +660,7 @@ ActionSpec.configure { |config|
 15. 顶层 `tags`
 16. 顶层 `externalDocs`
 17. `jsonSchemaDialect`
-18. 超出当前子集的更多 schema 关键字支持，包括 nullable / blank 语义、对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
+18. 超出当前子集的更多 schema 关键字支持，包括对象级约束，以及 `oneOf`、`anyOf`、`allOf`、`not` 这类组合关键字
 
 ## 贡献
 

@@ -14,7 +14,7 @@ module ActionSpec
         candidate = TypeCaster.cast(type, value)
       rescue TypeCaster::CastError => error
         result.add_error(path.join("."), :invalid_type, expected: error.expected)
-        nil
+        Schema::Missing
       else
         return candidate if candidate.nil?
 
@@ -23,7 +23,7 @@ module ActionSpec
       end
 
       def copy
-        self.class.new(type, default:, enum:, range:, pattern:, length:, allow_nil:, allow_blank:, desc: description, example:, examples:)
+        self.class.new(type, default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
     end
   end

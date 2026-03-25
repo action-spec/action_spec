@@ -24,7 +24,7 @@ module ActionSpec
       end
 
       def copy
-        self.class.new(item.copy, default:, enum:, range:, pattern:, length:, allow_nil:, allow_blank:, desc: description, example:, examples:)
+        self.class.new(item.copy, default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
     end
   end

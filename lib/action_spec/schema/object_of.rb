@@ -34,7 +34,7 @@ module ActionSpec
       end
 
       def copy
-        self.class.new(fields.transform_values(&:copy), default:, enum:, range:, pattern:, length:, allow_nil:, allow_blank:, desc: description, example:, examples:)
+        self.class.new(fields.transform_values(&:copy), default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
 
       private

@@ -36,7 +36,9 @@ module ActionSpec
         end
         return if content.empty?
 
-        { "content" => content }
+        { "content" => content }.tap do |body|
+          body["required"] = true if request.body_required?
+        end
       end
 
       def schema_for(schema)

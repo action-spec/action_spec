@@ -148,6 +148,38 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     expect(operation.fetch("responses")).to eq("200" => { "description" => "OK" })
   end
 
+  it "marks request bodies as required for json! and required: true declarations" do
+    stub_const("ProfilesController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create profile") do
+        json data: { nickname: { type: String, required: true } }, required: true
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/profiles",
+          defaults: { controller: "profiles", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    operation = document.dig("paths", "/profiles", "post")
+    request_body = operation.fetch("requestBody")
+
+    expect(request_body.fetch("required")).to eq(true)
+    expect(request_body.dig("content", "application/json", "schema")).to include(
+      "required" => include("nickname")
+    )
+  end
+
   it "uses doc(tag:) to override the default controller_path tag" do
     stub_const("AuctionsController", Class.new(ActionController::Base) do
       include ActionSpec::Doc

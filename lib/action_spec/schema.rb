@@ -12,13 +12,23 @@ require "action_spec/schema/type_caster"
 module ActionSpec
   module Schema
     Missing = Object.new.freeze
-    OPTION_KEYS = %i[default desc enum range pattern length allow_nil allow_blank example examples].freeze
+    OPTION_KEYS = %i[default desc enum range pattern length blank allow_blank example examples].freeze
+    FIELD_OPTION_KEYS = (OPTION_KEYS + %i[required]).freeze
 
     class << self
       def build(type = nil, **options)
         definition = options.symbolize_keys
         definition[:type] = type if type
         from_definition(definition)
+      end
+
+      def build_field(name, definition = nil, required: false, scopes: [])
+        Field.new(
+          name: field_name(name),
+          required: required_key?(name) || required || explicit_required?(definition),
+          schema: build_field_schema(strip_field_options(definition)),
+          scopes:
+        )
       end
 
       def from_definition(definition)
@@ -42,13 +52,8 @@ module ActionSpec
 
       def build_fields(definition_hash, scopes: [])
         definition_hash.each_with_object(ActiveSupport::OrderedHash.new) do |(name, definition), fields|
-          schema = build_field_schema(definition)
-          fields[field_name(name)] = Field.new(
-            name: field_name(name),
-            required: required_key?(name),
-            schema:,
-            scopes:
-          )
+          field = build_field(name, definition, scopes:)
+          fields[field.name] = field
         end
       end
 
@@ -64,11 +69,23 @@ module ActionSpec
         return from_definition(type: definition) unless definition.is_a?(Hash)
 
         definition = definition.symbolize_keys
-        return from_definition(definition) if definition.key?(:type)
-        return from_definition(definition) if (definition.keys - OPTION_KEYS).present?
+        return from_definition(definition.except(:required)) if definition.key?(:type)
+        return from_definition(definition.except(:required)) if (definition.keys - FIELD_OPTION_KEYS).present?
 
-        from_definition(definition.merge(type: String))
+        from_definition(definition.except(:required).merge(type: String))
       end
+
+      private
+
+        def explicit_required?(definition)
+          definition.is_a?(Hash) && definition.symbolize_keys[:required] == true
+        end
+
+        def strip_field_options(definition)
+          return definition unless definition.is_a?(Hash)
+
+          definition.symbolize_keys.except(:required)
+        end
     end
   end
 end

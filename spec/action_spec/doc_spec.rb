@@ -57,4 +57,35 @@ RSpec.describe ActionSpec::Doc do
     expect(endpoint.request.query.field(:user_id).scopes).to eq([:user])
     expect(endpoint.request.body.field(:name).scopes).to eq([:user])
   end
+
+  it "supports required: true without bang syntax for params, nested fields, and body" do
+    controller = build_controller do
+      doc :create do
+        query :page, Integer, required: true
+        json data: {
+          title: { type: String, required: true }
+        }, required: true
+      end
+
+      def create; end
+    end
+
+    endpoint = controller.action_spec_for(:create)
+
+    expect(endpoint.request.query.field(:page)).to be_required
+    expect(endpoint.request.body.field(:title)).to be_required
+    expect(endpoint.request).to be_body_required
+  end
+
+  it "does not expose the removed resp alias" do
+    controller = build_controller do
+      doc :create do
+        response 200, "ok"
+      end
+
+      def create; end
+    end
+
+    expect(controller.action_spec_for(:create).dsl).not_to respond_to(:resp)
+  end
 end

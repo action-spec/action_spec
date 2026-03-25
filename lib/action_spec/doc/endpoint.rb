@@ -46,6 +46,7 @@ module ActionSpec
         @cookie = Location.new(:cookie)
         @body = Location.new(:body)
         @body_media_types = {}
+        @body_required = false
       end
 
       def location(name)
@@ -61,6 +62,14 @@ module ActionSpec
         (@body_media_types[media_type.to_sym] ||= Location.new(media_type.to_sym)).add(field.copy)
       end
 
+      def require_body!
+        @body_required = true
+      end
+
+      def body_required?
+        @body_required
+      end
+
       def replace_with(other)
         @header = other.header
         @path = other.path
@@ -68,6 +77,7 @@ module ActionSpec
         @cookie = other.cookie
         @body = other.body
         @body_media_types = other.body_media_types
+        @body_required = other.body_required?
       end
 
       def copy
@@ -81,6 +91,7 @@ module ActionSpec
             :@body_media_types,
             body_media_types.transform_values(&:copy)
           )
+          request.instance_variable_set(:@body_required, body_required?)
         end
       end
     end

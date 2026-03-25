@@ -3,7 +3,7 @@
 module ActionSpec
   module Schema
     class Base
-      attr_reader :default, :enum, :range, :pattern, :length, :allow_nil, :allow_blank, :description, :example, :examples
+      attr_reader :default, :enum, :range, :pattern, :length, :blank, :description, :example, :examples
 
       def initialize(options = {})
         options = options.symbolize_keys
@@ -12,15 +12,20 @@ module ActionSpec
         @range = options[:range]
         @pattern = options[:pattern]
         @length = options[:length]
-        @allow_nil = options[:allow_nil]
-        @allow_blank = options[:allow_blank]
+        @blank = options.key?(:blank) ? options[:blank] : options.fetch(:allow_blank, true)
         @description = options[:desc] || options[:description]
         @example = options[:example]
         @examples = options[:examples]
       end
 
-      def materialize_missing(_context:, _coerce:, _result:, _path:)
+      alias allow_blank blank
+
+      def materialize_missing(context:, coerce:, result:, path:)
         Schema::Missing
+      end
+
+      def blank_allowed?
+        blank != false
       end
 
       def validate_constraints(value, result:, path:)

@@ -28,12 +28,12 @@ module ActionSpec
         end
       end
 
-      def body(media_type, data: {}, **)
-        add_body(media_type, data)
+      def body(media_type, data: {}, required: false, **)
+        add_body(media_type, data, required:)
       end
 
       def body!(media_type, data: {}, **)
-        add_body(media_type, data)
+        add_body(media_type, data, required: true)
       end
 
       def json(data:, **options)
@@ -79,7 +79,6 @@ module ActionSpec
         )
       end
 
-      alias resp response
       alias error response
 
       private
@@ -88,36 +87,24 @@ module ActionSpec
         attr_reader :scopes
 
         def add_param(location_name, name, type, required:, **options)
-          schema = ActionSpec::Schema.build(type, **options)
-          endpoint.request.add_param(location_name, ActionSpec::Schema::Field.new(name:, required:, schema:, scopes: scopes.dup))
+          required ||= options.delete(:required) == true
+          endpoint.request.add_param(
+            location_name,
+            ActionSpec::Schema.build_field(name, options.merge(type:), required:, scopes: scopes.dup)
+          )
         end
 
         def add_many(location_name, params, required:)
           params.each_pair do |name, definition|
-            if definition.is_a?(Hash) && !definition.key?(:type) && !definition.key?("type")
-              schema_options = definition.symbolize_keys
-              if (schema_options.keys - ActionSpec::Schema::OPTION_KEYS).present?
-                endpoint.request.add_param(
-                  location_name,
-                  ActionSpec::Schema::Field.new(
-                    name:,
-                    required:,
-                    schema: ActionSpec::Schema.from_definition(definition),
-                    scopes: scopes.dup
-                  )
-                )
-              else
-                add_param(location_name, name, String, required:, **definition)
-              end
-            elsif definition.is_a?(Hash)
-              add_param(location_name, name, definition[:type] || definition["type"] || String, required:, **definition.symbolize_keys.except(:type))
-            else
-              add_param(location_name, name, definition, required:)
-            end
+            endpoint.request.add_param(
+              location_name,
+              ActionSpec::Schema.build_field(name, definition, required:, scopes: scopes.dup)
+            )
           end
         end
 
-        def add_body(media_type, definition)
+        def add_body(media_type, definition, required:)
+          endpoint.request.require_body! if required
           ActionSpec::Schema.build_fields(definition, scopes: scopes.dup).each_value do |field|
             endpoint.request.add_body(media_type, field)
           end

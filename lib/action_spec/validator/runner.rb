@@ -13,7 +13,7 @@ module ActionSpec
         result = ValidationResult.new
         merge_group!(result, endpoint.request.path, source: path_source, location: :path)
         merge_group!(result, endpoint.request.query, source: params_source, location: :query)
-        merge_group!(result, endpoint.request.body, source: params_source, location: :body)
+        merge_body!(result)
         merge_group!(result, endpoint.request.header, source: header_source, location: :headers)
         merge_group!(result, endpoint.request.cookie, source: cookie_source, location: :cookies)
         result
@@ -22,6 +22,15 @@ module ActionSpec
       private
 
         attr_reader :endpoint, :controller, :coerce
+
+        def merge_body!(result)
+          if endpoint.request.body_required? && body_source.blank?
+            result.add_error("body", :required)
+            return
+          end
+
+          merge_group!(result, endpoint.request.body, source: body_source, location: :body)
+        end
 
         def merge_group!(result, group, source:, location:)
           group.fields.each do |field|
@@ -47,6 +56,12 @@ module ActionSpec
 
         def params_source
           controller.params.to_unsafe_h
+        end
+
+        def body_source
+          return params_source unless controller.request.respond_to?(:request_parameters)
+
+          controller.request.request_parameters || {}
         end
 
         def path_source

@@ -1,6 +1,6 @@
-# ActionSpec [WIP]
+# ActionSpec
 
-Concise and Powerful API Documentation Solution for Rails.
+Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md)
 
 <img src=".github/assets/action_spec.jpg" />
 
@@ -59,10 +59,8 @@ class UsersController < ApplicationController
   }
   def create
     User.create!(
-      account_id: px[:account_id],
-      name: px[:name],
-      birthday: px[:birthday],
-      admin: px[:admin]
+      account_id: px[:account_id], name: px[:name],
+      **px.slice(:birthday, :admin, :profile)
     )
   end
 end
@@ -208,7 +206,16 @@ cookie  :remember_token, String
 cookie! :remember_token, String
 ```
 
-Bang methods mark the field as required. For example, `query! :page, Integer` means the request must include `page`.
+Bang methods mark the field as required. For example, `query! :page, Integer` means the request must include `page`, and the value must not be `nil`. Blank values are still allowed unless you set `blank: false`.
+
+If you prefer not to use bang methods, you can also write `required: true`:
+
+```ruby
+query :page, Integer, required: true
+json data: {
+  title: { type: String, required: true }
+}
+```
 
 Batch declaration forms:
 
@@ -249,11 +256,9 @@ Convenience helpers:
 
 ```ruby
 json data: { name!: String }
-
 json! data: { name!: String }
 
 form data: { file!: File, position: String }
-
 form! data: { file!: File }
 ```
 
@@ -263,7 +268,14 @@ Single multipart field helper:
 data :file, File
 ```
 
-For `body/body!`, `json/json!`, and `form/form!`, the bang form is currently kept for DSL compatibility. At runtime they all contribute to the same body contract, and root-body requiredness is not yet enforced as a separate rule.
+Notes:
+
+1. When multiple `body/body!`, `json/json!`, or `form/form!` declarations are used:
+   - declarations with the same media type are merged
+   - if multiple media types are declared, the generated OpenAPI document will emit multiple media types
+   - field validation and coercion do not distinguish between media types, and always read values from Rails `params`
+
+`body!`, `json!`, and `form!` make the root request body required at runtime. You can also write `required: true` on `body`, `json`, or `form` if you prefer not to use bang methods.
 
 #### OpenAPI
 
@@ -283,6 +295,7 @@ doc {
     query :user_id, Integer
     form data: { name: String }
   }
+  form data: { not_in_scope: String }
 }
 ```
 
@@ -297,7 +310,6 @@ px.scope[:user] # => { user_id: 1, name: "Tom" }
 ```ruby
 response 200, desc: "success"
 response 422, "validation failed"
-resp 400, "bad request"
 error 401, "unauthorized"
 ```
 
@@ -324,7 +336,11 @@ Meaning of `!`:
 
 - `query!`, `path!`, `header!`, `cookie!` mark the parameter itself as required
 - keys such as `name!:` or `nickname!:` mark nested object fields as required
-- `body!`, `json!`, and `form!` are currently accepted for DSL consistency, but today they behave the same as the non-bang form at runtime
+- `body!`, `json!`, and `form!` mark the root request body as required
+
+You can also use `required: true` instead of bang syntax for parameters, nested fields, and the root request body.
+
+`required` in ActionSpec means "present and not `nil`". It does not reject blank strings by itself. If you want to reject blank values, use `blank: false` or `allow_blank: false`.
 
 #### Field Types
 
@@ -364,18 +380,16 @@ query :today, Date, default: -> { Time.current.to_date }
 query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
+query :title, String, blank: false # or allow_blank: false
 ```
 
-These options are currently used by OpenAPI generation, but are not yet used by the runtime validator:
+These options are used by OpenAPI generation:
 
 - `desc`
 - `example`
 - `examples`
 
-These options are not yet used by either the runtime validator or OpenAPI generation:
-
-- `allow_nil`
-- `allow_blank`
+If an OpenAPI-facing option such as `default` cannot be converted into YAML, for example `default: -> { ... }`, it will be omitted from the generated OpenAPI document.
 
 #### Schemas From ActiveRecord
 
@@ -484,6 +498,7 @@ This hook also skips actions without a matching `doc`, so it is safe to declare 
 ### Reading Processed Values With `px`
 
 `px` stores the processed values produced by ActionSpec. With `validate_params!` they stay raw; with `validate_and_coerce_params!` they are coerced values.
+
 Because `px` is still a hash, you can also use helpers such as `px.slice(...)` to simplify parameter access code.
 
 ```ruby
@@ -636,7 +651,7 @@ When using AI tools to generate Rails controller code, and the change involves p
 - parameter-level `style`, `explode`, `allowReserved`, `examples`, and richer header/cookie serialization controls
 - request body `encoding`
 - multiple request/response media types beyond the current direct DSL mapping
-- response body schema generation; current `response` / `resp` / `error` declarations only generate response descriptions
+- response body schema generation; current `response` / `error` declarations only generate response descriptions
 - response headers
 - response links
 - callbacks
@@ -647,7 +662,7 @@ When using AI tools to generate Rails controller code, and the change involves p
 - top-level `tags`
 - top-level `externalDocs`
 - `jsonSchemaDialect`
-- richer schema keywords beyond the current subset, including nullable/blank semantics, object-level constraints, and composition keywords such as `oneOf`, `anyOf`, `allOf`, and `not`
+- richer schema keywords beyond the current subset, including object-level constraints, and composition keywords such as `oneOf`, `anyOf`, `allOf`, and `not`
 
 ## Contributing
 

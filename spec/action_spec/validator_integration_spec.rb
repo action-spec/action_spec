@@ -88,4 +88,43 @@ RSpec.describe "ActionSpec validator integration" do
 
     expect(result.errors.full_messages).to include("Profile nickname is required")
   end
+
+  it "treats body! as a root body required validation" do
+    I18n.backend.store_translations(
+      :en,
+      activemodel: {
+        errors: {
+          messages: {
+            required: "is required"
+          }
+        }
+      }
+    )
+
+    controller = build_controller do
+      before_action :validate_and_coerce_params!
+
+      doc :create do
+        json! data: { name!: String }
+      end
+
+      def create
+        head :ok
+      end
+    end
+
+    expect do
+      dispatch(
+        controller,
+        action: :create,
+        method: "POST",
+        path: "/users"
+      )
+    end.to raise_error(ActionSpec::InvalidParameters) { |error|
+      expect(error.errors.attribute_names).to eq([:body])
+      expect(error.errors.to_hash(full_messages: true)).to include(
+        body: include("Body is required")
+      )
+    }
+  end
 end
