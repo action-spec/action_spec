@@ -201,6 +201,16 @@ cookie! :remember_token, String
 
 bang 方法表示“必填”。例如 `query! :page, Integer` 表示请求里必须传 `page`，并且值不能是 `nil`。如果没有额外声明 `blank: false`，空字符串这类 blank 值仍然允许通过。
 
+你也可以通过全局配置修改这个默认行为：
+
+```ruby
+ActionSpec.configure do |config|
+  config.required_allow_blank = false
+end
+```
+
+当 `required_allow_blank = false` 时，required 字段会拒绝 blank string；如果某个字段单独写了 `blank:` 或 `allow_blank:`，则以字段自身声明为准。
+
 如果你不想使用 bang，也可以写 `required: true`：
 
 ```ruby
@@ -372,7 +382,9 @@ json data: {
 
 你也可以用 `required: true` 代替 bang 语法，适用于普通参数、嵌套字段和根级 request body。
 
-在 ActionSpec 里，`required` 的语义是“字段存在，且值不是 `nil`”。它本身不会拦截 blank 字符串；如果你希望 blank 值失败，请使用 `blank: false` 或 `allow_blank: false`。
+在 ActionSpec 里，`required` 的语义是“字段存在，且值不是 `nil`”。默认情况下它不会拦截 blank 字符串。你可以保持这个默认值，也可以通过 `config.required_allow_blank` 全局修改，或者通过字段上的 `blank:` / `allow_blank:` 单独覆盖。
+
+当字段允许 blank 时，在做类型转换时，不会因为传入空字符串直接报错。如果该类型本身可以自然承载 blank 值，例如 `String`，那么 `px` 里会保留原始 blank string；如果该类型无法得到有意义的转换结果，那么 `px` 里会写成 `nil`。比如 `String` 传入 `""` 后仍然是 `""`，而 `Date` 传入 `""` 后会变成 `nil`。
 
 #### 2. 字段类型
 
@@ -427,6 +439,7 @@ query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 query :title, String, blank: false # or allow_blank: false
+query :published_on, Date # blank allowed 时，blank string 会变成 nil
 
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
@@ -485,7 +498,7 @@ class UsersController < ApplicationController
 end
 ```
 
-`User.schemas` 返回的就是一份可以直接传给 `form data:`、`json data:` 或 `body` 的 hash。
+`User.schemas` 返回的是一份 symbol key 的 hash，可以直接传给 `form data:`、`json data:` 或 `body`。
 
 默认会包含模型的全部字段：
 
@@ -499,7 +512,7 @@ User.schemas
 User.schemas(only: %i[name phone role])
 ```
 
-`bang:` 默认是 `true`，所以必填字段会输出成 `"name!"` 这样的 bang key。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
+`bang:` 默认是 `true`，所以必填字段会输出成 `name!:` 这样的 bang key。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
 
 ```ruby
 User.schemas(bang: false)
@@ -508,7 +521,7 @@ User.schemas(bang: false)
 ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的信息，包括：
 
 1. 字段类型
-2. 必填状态；默认输出成 `"name!"` 这样的 bang key，而在 `bang: false` 时输出成 `required: true`
+2. 必填状态；默认输出成 `name!:` 这样的 bang key，而在 `bang: false` 时输出成 `required: true`
 3. `enum` 定义
 4. `default`
 5. 列注释对应的 `desc`
@@ -521,16 +534,16 @@ ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的
 ```ruby
 User.schemas
 # {
-#   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
-#   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   "role" => { type: String, enum: %w[admin member visitor] }
+#   name!: { type: String, desc: "user name", length: { maximum: 20 } },
+#   phone!: { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   role: { type: String, enum: %w[admin member visitor] }
 # }
 
 User.schemas(bang: false)
 # {
-#   "name" => { type: String, required: true, desc: "user name", length: { maximum: 20 } },
-#   "phone" => { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   "role" => { type: String, enum: %w[admin member visitor] }
+#   name: { type: String, required: true, desc: "user name", length: { maximum: 20 } },
+#   phone: { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   role: { type: String, enum: %w[admin member visitor] }
 # }
 ```
 

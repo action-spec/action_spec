@@ -3,7 +3,7 @@
 module ActionSpec
   class Configuration
     attr_accessor :invalid_parameters_exception_class, :open_api_output, :open_api_title, :open_api_version,
-                  :open_api_server_url, :default_response_media_type
+                  :open_api_server_url, :default_response_media_type, :required_allow_blank
     attr_reader :error_messages
 
     def initialize
@@ -13,6 +13,7 @@ module ActionSpec
       @open_api_version = nil
       @open_api_server_url = nil
       @default_response_media_type = :json
+      @required_allow_blank = true
       @error_messages = ActiveSupport::HashWithIndifferentAccess.new
     end
 
@@ -35,6 +36,7 @@ module ActionSpec
         copy.open_api_version = open_api_version
         copy.open_api_server_url = open_api_server_url
         copy.default_response_media_type = default_response_media_type
+        copy.required_allow_blank = required_allow_blank
         copy.error_messages = error_messages.deep_dup
       end
     end

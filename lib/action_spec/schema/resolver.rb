@@ -16,6 +16,7 @@ module ActionSpec
         return resolve_missing unless present?
 
         return resolve_nil if value.nil?
+        return finalize(schema.blank_value(value)) if blank_string_allowed?
         return resolve_blank if blank_disallowed?
 
         finalize(schema.cast(value, context:, coerce:, result:, path:))
@@ -60,6 +61,12 @@ module ActionSpec
 
         def blank_disallowed?
           !schema.blank_allowed? && value.respond_to?(:blank?) && value.blank?
+        end
+
+        def blank_string_allowed?
+          # Keep blank-string semantics explicit: preserve only values that the schema
+          # can meaningfully carry as blank, and normalize the rest to nil.
+          schema.blank_allowed? && value.is_a?(String) && value.blank?
         end
 
         def finalize(resolved)

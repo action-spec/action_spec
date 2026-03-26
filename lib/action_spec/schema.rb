@@ -23,10 +23,12 @@ module ActionSpec
       end
 
       def build_field(name, definition = nil, required: false, scopes: [])
+        field_required = required_key?(name) || required || explicit_required?(definition)
+
         Field.new(
           name: field_name(name),
-          required: required_key?(name) || required || explicit_required?(definition),
-          schema: build_field_schema(strip_field_options(definition)),
+          required: field_required,
+          schema: build_field_schema(schema_definition_for_field(definition, required: field_required)),
           transform: explicit_transform(definition),
           validate: explicit_validate(definition),
           px_key: explicit_px_key(definition),
@@ -76,8 +78,8 @@ module ActionSpec
         name.to_s.end_with?("!")
       end
 
-      def build_field_schema(definition)
-        return from_definition(type: definition) unless definition.is_a?(Hash)
+        def build_field_schema(definition)
+          return from_definition(type: definition) unless definition.is_a?(Hash)
 
         definition = definition.symbolize_keys
         return from_definition(definition.except(:required)) if definition.key?(:type)
@@ -138,6 +140,22 @@ module ActionSpec
           return definition unless definition.is_a?(Hash)
 
           definition.symbolize_keys.except(:required, :transform, :px, :px_key, :validate)
+        end
+
+        def schema_definition_for_field(definition, required:)
+          definition = strip_field_options(definition)
+          return definition unless required
+          return definition if explicit_blank_option?(definition)
+
+          if definition.is_a?(Hash)
+            definition.symbolize_keys.merge(allow_blank: ActionSpec.config.required_allow_blank)
+          else
+            { type: definition.nil? ? String : definition, allow_blank: ActionSpec.config.required_allow_blank }
+          end
+        end
+
+        def explicit_blank_option?(definition)
+          definition.is_a?(Hash) && definition.symbolize_keys.slice(:blank, :allow_blank).present?
         end
     end
   end

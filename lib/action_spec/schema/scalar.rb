@@ -25,6 +25,10 @@ module ActionSpec
       def copy
         self.class.new(type, default:, enum:, range:, pattern:, length:, blank:, desc: description, example:, examples:)
       end
+
+      def blank_value(value)
+        TypeCaster.normalize(type) == :string ? value : nil
+      end
     end
   end
 end

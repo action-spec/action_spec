@@ -26,7 +26,7 @@ module ActionSpec
           end
 
           def output_name(name, bang:)
-            bang && required_attribute?(name) ? "#{name}!" : name
+            (bang && required_attribute?(name) ? "#{name}!" : name).to_sym
           end
 
           def schema_definition_for(name, bang:)

@@ -24,6 +24,10 @@ module ActionSpec
         Schema::Missing
       end
 
+      def blank_value(_value)
+        nil
+      end
+
       def blank_allowed?
         blank != false
       end

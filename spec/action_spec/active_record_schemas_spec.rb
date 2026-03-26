@@ -46,25 +46,25 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
 
     expect(user_class.schemas).to eq(
-      "name!" => {
+      name!: {
         type: String,
         desc: "user name",
         length: { maximum: 20 }
       },
-      "phone!" => {
+      phone!: {
         type: String,
         length: { maximum: 13 },
         pattern: /\A1\d{10}\z/
       },
-      "role" => {
+      role: {
         type: String,
         enum: %w[admin member visitor]
       },
-      "birthday" => {
+      birthday: {
         type: Date,
         enum: [Date.new(2025, 10, 17), Date.new(2025, 10, 18)]
       },
-      "score" => {
+      score: {
         type: Integer,
         default: 1,
         range: { ge: 1, lt: 10 }
@@ -93,8 +93,8 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     allow(user_class).to receive(:validators).and_return([])
 
     expect(user_class.schemas(only: %i[role phone!])).to eq(
-      "phone!" => { type: String },
-      "role" => { type: String, enum: %w[admin member] }
+      phone!: { type: String },
+      role: { type: String, enum: %w[admin member] }
     )
   end
 
@@ -121,18 +121,18 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
 
     expect(user_class.schemas(bang: false)).to eq(
-      "name" => {
+      name: {
         type: String,
         required: true,
         desc: "user name",
         length: { maximum: 20 }
       },
-      "phone" => {
+      phone: {
         type: String,
         required: true,
         length: { maximum: 13 }
       },
-      "role" => {
+      role: {
         type: String,
         enum: %w[admin member]
       }
@@ -160,8 +160,8 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     allow(user_class).to receive(:validators).and_return([])
 
     expect(user_class.schemas(only: %i[phone! role], bang: false)).to eq(
-      "phone" => { type: String, required: true },
-      "role" => { type: String, enum: %w[admin member] }
+      phone: { type: String, required: true },
+      role: { type: String, enum: %w[admin member] }
     )
   end
 

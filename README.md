@@ -201,6 +201,16 @@ cookie! :remember_token, String
 
 Bang methods mark the field as required. For example, `query! :page, Integer` means the request must include `page`, and the value must not be `nil`. Blank values are still allowed unless you set `blank: false`.
 
+You can also change that default globally:
+
+```ruby
+ActionSpec.configure do |config|
+  config.required_allow_blank = false
+end
+```
+
+With `required_allow_blank = false`, required fields reject blank strings unless that field explicitly sets `blank:` or `allow_blank:`.
+
 If you prefer not to use bang methods, you can also write `required: true`:
 
 ```ruby
@@ -371,7 +381,9 @@ Meaning of `!`:
 
 You can also use `required: true` instead of bang syntax for parameters, nested fields, and the root request body.
 
-`required` in ActionSpec means "present and not `nil`". It does not reject blank strings by itself. If you want to reject blank values, use `blank: false` or `allow_blank: false`.
+`required` in ActionSpec means "present and not `nil`". By default it does not reject blank strings. You can keep that default, change it globally with `config.required_allow_blank`, or override it per field with `blank:` / `allow_blank:`.
+
+When blank values are allowed, type coercion does not fail just because the input is an empty string. If the field can still carry a meaningful blank value, such as `String`, the original blank string stays in `px`. Otherwise, ActionSpec stores `nil` for that field. For example, `""` stays `""` for `String`, but becomes `nil` for `Date`.
 
 #### Field Types
 
@@ -426,6 +438,7 @@ query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
 query :title, String, blank: false # or allow_blank: false
+query :published_on, Date # blank strings become nil when blank is allowed
 
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
@@ -482,7 +495,7 @@ class UsersController < ApplicationController
 end
 ```
 
-`User.schemas` returns a hash that can be passed directly into `form data:`, `json data:`, or `body`.
+`User.schemas` returns a symbol-keyed hash that can be passed directly into `form data:`, `json data:`, or `body`.
 
 By default, it includes all model fields:
 
@@ -496,7 +509,7 @@ You can also limit the exported fields:
 User.schemas(only: %i[name phone role])
 ```
 
-`bang:` defaults to `true`, so required fields are emitted as bang keys such as `"name!"`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
+`bang:` defaults to `true`, so required fields are emitted as bang keys such as `name!:`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
 
 ```ruby
 User.schemas(bang: false)
@@ -505,7 +518,7 @@ User.schemas(bang: false)
 ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel when available, including:
 
 - field type
-- requiredness, rendered either as bang keys such as `"name!"` or as `required: true` when `bang: false`
+- requiredness, rendered either as bang keys such as `name!:` or as `required: true` when `bang: false`
 - enum values from `enum`
 - `default`
 - `desc` from column comments
@@ -518,16 +531,16 @@ Example output:
 ```ruby
 User.schemas
 # {
-#   "name!" => { type: String, desc: "user name", length: { maximum: 20 } },
-#   "phone!" => { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   "role" => { type: String, enum: %w[admin member visitor] }
+#   name!: { type: String, desc: "user name", length: { maximum: 20 } },
+#   phone!: { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   role: { type: String, enum: %w[admin member visitor] }
 # }
 
 User.schemas(bang: false)
 # {
-#   "name" => { type: String, required: true, desc: "user name", length: { maximum: 20 } },
-#   "phone" => { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   "role" => { type: String, enum: %w[admin member visitor] }
+#   name: { type: String, required: true, desc: "user name", length: { maximum: 20 } },
+#   phone: { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   role: { type: String, enum: %w[admin member visitor] }
 # }
 ```
 
