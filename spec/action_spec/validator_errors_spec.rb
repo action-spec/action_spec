@@ -112,4 +112,90 @@ RSpec.describe ActionSpec::Validator do
       expect(error.errors.full_messages).to include("Birthday should be coercible to date")
     }
   end
+
+  it "lets a field override the required error with a string message" do
+    controller = build_controller do
+      before_action :validate_and_coerce_params!
+
+      doc :create do
+        query! :page, Integer, error: "choose a page first"
+      end
+
+      def create
+        head :ok
+      end
+    end
+
+    expect do
+      dispatch(
+        controller,
+        action: :create,
+        method: "POST",
+        path: "/users"
+      )
+    end.to raise_error(ActionSpec::InvalidParameters) { |error|
+      expect(error.errors.full_messages).to include("Page choose a page first")
+    }
+  end
+
+  it "lets a field override coercion failures with a proc that receives the error type and failing value" do
+    controller = build_controller do
+      before_action :validate_and_coerce_params!
+
+      doc :create do
+        json data: {
+          birthday!: { type: Date, error_message: ->(error, value) { "#{error}: #{value.inspect}" } }
+        }
+      end
+
+      def create
+        head :ok
+      end
+    end
+
+    expect do
+      dispatch(
+        controller,
+        action: :create,
+        method: "POST",
+        path: "/users",
+        params: { birthday: "not-a-date" }
+      )
+    end.to raise_error(ActionSpec::InvalidParameters) { |error|
+      expect(error.errors.full_messages).to include('Birthday invalid_type: "not-a-date"')
+    }
+  end
+
+  it "runs field error_message procs in controller context for validation failures" do
+    controller = build_controller do
+      before_action :validate_and_coerce_params!
+
+      doc :create do
+        query :role, String,
+          validate: -> { false },
+          error_message: -> { "is not allowed for #{current_user}" }
+      end
+
+      def create
+        head :ok
+      end
+
+      private
+
+        def current_user
+          "admin"
+        end
+    end
+
+    expect do
+      dispatch(
+        controller,
+        action: :create,
+        method: "POST",
+        path: "/users?role=guest"
+      )
+    end.to raise_error(ActionSpec::InvalidParameters) { |error|
+      expect(error.errors.full_messages).to include("Role is not allowed for admin")
+    }
+  end
 end

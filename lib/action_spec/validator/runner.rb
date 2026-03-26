@@ -133,7 +133,7 @@ module ActionSpec
           validate_nested_schema!(field.schema, value, result:, path:)
           return if field.validate_value(value, context: controller)
 
-          result.add_error(path.join("."), :invalid)
+          field.add_error(result, path:, type: :invalid, value:, context: controller)
         end
 
         def validate_nested_schema!(schema, value, result:, path:)

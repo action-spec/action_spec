@@ -518,6 +518,115 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
   end
 
+  it "can merge custom schema fragments by raw field name" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: "user name", limit: 20),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(merge: { name: { desc: "nickname" }, role: { example: "admin" } })).to eq(
+      name!: { type: String, desc: "nickname", length: { maximum: 20 } },
+      role: { type: String, enum: %w[admin member], example: "admin" }
+    )
+  end
+
+  it "deep merges custom schema fragments" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name score])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: 20),
+      "score" => Column.new(name: "score", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [DemoNumericalityValidator.new(attributes: [:score], greater_than_or_equal_to: 1)]
+    )
+
+    expect(user_class.schemas(merge: {
+      name: { length: { minimum: 2 } },
+      score: { range: { le: 10 } }
+    })).to eq(
+      name!: { type: String, length: { minimum: 2, maximum: 20 } },
+      score: { type: Integer, range: { ge: 1, le: 10 } }
+    )
+  end
+
+  it "does not let merge depend on bang-style output names" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:phone])]
+    )
+
+    expect(user_class.schemas(
+      bang: false,
+      required: false,
+      merge: { name: { desc: "nickname" }, phone: { example: "13800138000" } }
+    )).to eq(
+      name: { type: String, desc: "nickname" },
+      phone: { type: String, allow_blank: false, example: "13800138000" }
+    )
+  end
+
+  it "lets merge disable required output, including bang-style keys" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:phone])]
+    )
+
+    expect(user_class.schemas(
+      merge: { name: { required: false }, phone: { required: false } }
+    )).to eq(
+      name: { type: String },
+      phone: { type: String, allow_blank: false }
+    )
+  end
+
   it "still ignores if and unless even when on is provided" do
     user_class = Class.new(ActiveRecord::Base) do
       include ActionSpec::Schema::ActiveRecord

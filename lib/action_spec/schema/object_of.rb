@@ -10,8 +10,8 @@ module ActionSpec
         @fields = fields
       end
 
-      def cast(value, context:, coerce:, result:, path:)
-        source = normalize_source(value, result:, path:)
+      def cast(value, context:, coerce:, result:, path:, field: nil)
+        source = normalize_source(value, result:, path:, field:, context:, invalid_value: value)
         return Schema::Missing if source.equal?(Schema::Missing)
 
         output = ActiveSupport::HashWithIndifferentAccess.new
@@ -30,7 +30,7 @@ module ActionSpec
       end
 
       def materialize_missing(context:, coerce:, result:, path:)
-        cast({}, context:, coerce:, result:, path:)
+        cast({}, context:, coerce:, result:, path:, field: nil)
       end
 
       def copy
@@ -43,12 +43,16 @@ module ActionSpec
 
       private
 
-        def normalize_source(value, result:, path:)
+        def normalize_source(value, result:, path:, field:, context:, invalid_value:)
           return {} if value.nil?
           return value.to_unsafe_h.with_indifferent_access if value.is_a?(ActionController::Parameters)
           return value.with_indifferent_access if value.is_a?(Hash)
 
-          result.add_error(path.join("."), :invalid)
+          if field
+            field.add_error(result, path:, type: :invalid, value: invalid_value, context:)
+          else
+            result.add_error(path.join("."), :invalid)
+          end
           Schema::Missing
         end
     end

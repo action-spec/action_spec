@@ -438,22 +438,53 @@ query :today, Date, default: -> { Time.current.to_date }
 query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
-query :title, String, blank: false # or allow_blank: false
-query :published_on, Date # blank allowed 时，blank string 会变成 nil
+query :title, String, blank: false
 
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
-query :request_id, String, px_key: :trace_id
 query :end_at, Integer, validate: -> { current_user && it >= px[:start_at] }
+query :birthday, Date, error: "birthday error"
 ```
 
-说明：
+- `required`
+  - 将字段声明为必填。
+  - 在不使用 `name!:` 时可替代 bang 语法。
+- `default`
+  - 字段缺失时使用的默认值。
+  - 可以是字面量，也可以是 `-> { }`。
+- `enum`
+  - 限制字段只能取固定集合中的值。
+- `range`
+  - 数值范围约束：`ge` / `gt` / `le` / `lt`
+- `pattern`
+  - 正则约束。
+- `length`
+  - 长度约束：`minimum` / `maximum` / `is`
+- `blank` / `allow_blank`
+  - 控制是否允许 blank 值。
+  - 对于比如 Date 等类型的字段，如果允许为空，那么将不会做类型转换，其值为 `nil`。
 
-1. `transform` 支持传入 `Symbol` 或 `Proc`，会在**类型转换之后**、写入 `px` 之前执行。
-2. `px` 和 `px_key` 用来定制参数写入 `px` 时使用的 key 名；`px` 是 `px_key` 的简写。
-3. `validate` 支持传入 `Proc`，并且会在**所有参数都完成解析、类型转换、transform、写入 `px` 之后**再执行。
-4. `validate` 的执行环境就是当前 controller，所以可以读取 `px`，也可以直接调用 `current_user` 这类方法。
-5. 当 `validate` 返回 `false` 或 `nil` 时，会为该字段追加一个 `invalid` 错误。
+- `desc`：仅用于 OpenAPI 文档生成描述。
+- `example`：仅用于 OpenAPI 文档生成单个示例。
+- `examples`：仅用于 OpenAPI 文档生成多个示例。
+
+- `transform`
+  - 对**类型转换之后的值**再进行一次自定义转换。
+  - 支持传入 `Symbol` 或 `Proc`。
+- `px` / `px_key`
+  - 自定义参数写入 `px` 时使用的 key 名。
+- `validate`
+  - 支持传入 `Proc`。
+  - 会在**所有参数都完成解析、类型转换、transform、写入 `px` 之后**再执行。
+  - 执行环境就是当前 controller，所以可以读取 `px`，也可以直接调用类似 `current_user` 等控制器方法。
+  - 当 `validate` 返回 `false` 或 `nil` 时，会为该字段追加一个 `invalid` 错误。
+- `error` / `error_message`
+  - 可以覆写该字段在校验失败或类型转换失败时的报错消息。
+  - 支持三种形式：
+    - `String`
+    - `-> { }`
+    - `->(error, value) { }`
+  - 字段上的 `error` / `error_message` 优先级高于全局 `config.error_messages`。
 
 关于嵌套对象字段
 
@@ -535,6 +566,12 @@ User.schemas(required: false)
 User.schemas(required: %i[name role])
 ```
 
+如果想给导出的字段合并自定义 schema 片段，也可以传 `merge:`：
+
+```ruby
+User.schemas(merge: { name: { required: false, desc: "nickname" } })
+```
+
 `bang:` 默认是 `true`，所以必填字段会输出成 `name!:` 这样的 bang key。`only:` 和 `except:` 都支持普通字段名，也支持 `phone!` 这种 bang 风格的字段名。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
 
 ```ruby
@@ -553,7 +590,7 @@ ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的
 8. numericality validator 对应的 `range`
 9. length validator 和字符串列长度对应的 `length`
 
-带有 `if:`、`unless:` 的 validator 不会参与 schema 提取，因为这类规则无法被准确表达成无条件的静态 schema 约束。带有 `on:` / `except_on:` 的 validator 默认也不会提取，但你可以通过 `schemas(on: ...)` 显式提取某个 validation context 下的规则。`required:` 只会覆盖导出字段的 required 状态，不会移除其他已提取的约束，比如 `allow_blank: false`。
+带有 `if:`、`unless:` 的 validator 不会参与 schema 提取，因为这类规则无法被准确表达成无条件的静态 schema 约束。带有 `on:` / `except_on:` 的 validator 默认也不会提取，但你可以通过 `schemas(on: ...)` 显式提取某个 validation context 下的规则。`required:` 只会覆盖导出字段的 required 状态，不会移除其他已提取的约束，比如 `allow_blank: false`。`merge:` 会把自定义 schema 片段 deep merge 到每个字段的提取结果里。
 
 输出示例：
 
@@ -760,6 +797,18 @@ ActionSpec.configure { |config|
   config.error_messages[:invalid_type] = ->(_attribute, options) { "必须是合法的 #{options.fetch(:expected)}" }
   config.error_messages[:page] = {
     required: "页码不能为空"
+  }
+}
+```
+
+如果你想直接在 DSL 里覆写某个字段自己的报错，可以在字段上写 `error` 或 `error_message`：
+
+```ruby
+doc {
+  query! :page, Integer, error: "choose a page first"
+  query :role, String, validate: -> { false }, error_message: -> { "is not allowed for #{current_user}" }
+  json data: {
+    birthday!: { type: Date, error_message: ->(error, value) { "#{error}: #{value.inspect}" } }
   }
 }
 ```

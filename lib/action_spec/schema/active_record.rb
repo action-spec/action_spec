@@ -6,20 +6,26 @@ module ActionSpec
       extend ActiveSupport::Concern
 
       class_methods do
-        def schemas(only: nil, except: nil, on: nil, required: nil, bang: true)
+        def schemas(only: nil, except: nil, on: nil, required: nil, merge: nil, bang: true)
           names = selected_column_names(only:, except:)
           @action_spec_validator_index = build_validator_index
           @action_spec_validation_context = normalize_validation_context(on)
           @action_spec_required_override = normalize_required_override(required)
+          @action_spec_schema_merge = normalize_schema_merge(merge)
 
           names.each_with_object(ActiveSupport::OrderedHash.new) do |name, hash|
-            field_required = required_output?(name)
-            hash[output_name(name, bang:, required: field_required)] = schema_definition_for(name, bang:, required: field_required)
+            base_required = required_output?(name)
+            definition = schema_definition_for(name, bang:, required: base_required)
+            definition = merge_definition_for(name, definition)
+            output_required = output_required_for(definition, bang:, fallback: base_required)
+            definition = normalize_required_in_definition(definition, bang:, required: output_required)
+            hash[output_name(name, bang:, required: output_required)] = definition
           end
         ensure
           remove_instance_variable(:@action_spec_validator_index) if instance_variable_defined?(:@action_spec_validator_index)
           remove_instance_variable(:@action_spec_validation_context) if instance_variable_defined?(:@action_spec_validation_context)
           remove_instance_variable(:@action_spec_required_override) if instance_variable_defined?(:@action_spec_required_override)
+          remove_instance_variable(:@action_spec_schema_merge) if instance_variable_defined?(:@action_spec_schema_merge)
         end
 
         private
@@ -227,6 +233,41 @@ module ActionSpec
             return value if value == true || value == false
 
             Array(value).map { |name| normalize_name(name) }
+          end
+
+          def merge_definition_for(name, definition)
+            fragment = @action_spec_schema_merge.fetch(name.to_s, nil)
+            return definition unless fragment
+
+            definition.deep_merge(fragment)
+          end
+
+          def output_required_for(definition, bang:, fallback:)
+            return fallback if bang && !definition.key?(:required)
+
+            definition.fetch(:required, fallback) == true
+          end
+
+          def normalize_required_in_definition(definition, bang:, required:)
+            definition = definition.deep_dup
+            if bang
+              definition.delete(:required)
+            else
+              required ? definition[:required] = true : definition.delete(:required)
+            end
+            definition
+          end
+
+          def normalize_schema_merge(value)
+            return {} if value.nil?
+
+            value.to_h.each_with_object({}) do |(name, fragment), hash|
+              hash[normalize_name(name)] = normalize_schema_fragment(fragment)
+            end
+          end
+
+          def normalize_schema_fragment(fragment)
+            fragment.to_h.deep_symbolize_keys
           end
 
           def normalize_name(name)

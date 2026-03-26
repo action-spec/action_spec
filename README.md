@@ -437,22 +437,58 @@ query :today, Date, default: -> { Time.current.to_date }
 query :status, String, enum: %w[draft published]
 query :score, Integer, range: { ge: 1, le: 5 }
 query :slug, String, pattern: /\A[a-z\-]+\z/
-query :title, String, blank: false # or allow_blank: false
-query :published_on, Date # blank strings become nil when blank is allowed
+query :title, String, blank: false
 
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
-query :request_id, String, px_key: :trace_id
 query :end_at, Integer, validate: -> { current_user && it >= px[:start_at] }
+query :birthday, Date, error: "birthday error"
 ```
 
-Notes:
+- `required`
+  - Marks the field as required.
+  - Can replace bang syntax when you do not use `name!:`.
+- `default`
+  - Default value used when the field is missing.
+  - Can be a literal or `-> { }`.
+- `enum`
+  - Restricts the field to values from a fixed set.
+- `range`
+  - Numeric range constraints.
+  - Available: `ge` / `gt` / `le` / `lt`
+- `pattern`
+  - Regex constraint.
+- `length`
+  - Length constraints.
+  - Available: `minimum` / `maximum` / `is`
+- `blank` / `allow_blank`
+  - Controls whether blank values are allowed.
+  - For fields such as `Date`, if blank is allowed, no type coercion is applied and the value becomes `nil`.
 
-- `transform` accepts a `Symbol` or a `Proc` and runs **after coercion**, before the value is written into `px`
-- `px` and `px_key` customize the key name written into `px`; `px` is the short form of `px_key`
-- `validate` accepts a `Proc` and runs **after all parameters have been resolved, coerced, transformed, and written into `px`**
-- `validate` runs in the current controller context, so it can read `px` and call methods such as `current_user`
-- when `validate` returns `false` or `nil`, the field adds an `invalid` error
+- `desc`
+  - Used only for OpenAPI description generation.
+- `example`
+  - Used only for generating a single OpenAPI example.
+- `examples`
+  - Used only for generating multiple OpenAPI examples.
+
+- `transform`
+  - Applies one more custom transformation to the **already-coerced value**.
+  - Accepts a `Symbol` or a `Proc`.
+- `px` / `px_key`
+  - Customize the key name used when the parameter is written into `px`.
+- `validate`
+  - Accepts a `Proc`.
+  - Runs **after all parameters have finished resolving, coercion, transform, and writing into `px`**.
+  - Runs in the current controller context, so it can read `px` and directly call controller methods such as `current_user`.
+  - When `validate` returns `false` or `nil`, the field adds an `invalid` error.
+- `error` / `error_message`
+  - Override the error message used when that field fails validation or coercion.
+  - Supported forms:
+    - `String`
+    - `-> { }`
+    - `->(error, value) { }`
+  - Field-level `error` / `error_message` have higher priority than global `config.error_messages`.
 
 About nested object fields
 
@@ -532,6 +568,12 @@ User.schemas(required: false)
 User.schemas(required: %i[name role])
 ```
 
+You can also merge custom schema fragments into the exported fields:
+
+```ruby
+User.schemas(merge: { name: { required: false, desc: "nickname" } })
+```
+
 `bang:` defaults to `true`, so required fields are emitted as bang keys such as `name!:`. `only:` and `except:` both accept plain names or bang-style names such as `phone!`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
 
 ```ruby
@@ -550,7 +592,7 @@ ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel 
 - `range` from numericality validators
 - `length` from length validators and string column limits
 
-Conditional validators with `if:` or `unless:` are skipped during schema extraction, because they cannot be represented as unconditional static schema rules. Validators with `on:` / `except_on:` are skipped by default, but can be extracted by passing `schemas(on: ...)`. The `required:` option overrides the requiredness of exported fields only; it does not remove other extracted constraints such as `allow_blank: false`.
+Conditional validators with `if:` or `unless:` are skipped during schema extraction, because they cannot be represented as unconditional static schema rules. Validators with `on:` / `except_on:` are skipped by default, but can be extracted by passing `schemas(on: ...)`. The `required:` option overrides the requiredness of exported fields only; it does not remove other extracted constraints such as `allow_blank: false`. The `merge:` option deep-merges custom fragments into each extracted field definition.
 
 Example output:
 
@@ -759,6 +801,18 @@ ActionSpec.configure { |config|
   config.error_messages[:invalid_type] = ->(_attribute, options) { "must be a valid #{options.fetch(:expected)}" }
   config.error_messages[:page] = {
     required: "page is mandatory"
+  }
+}
+```
+
+If you want to override one specific field directly in the DSL, use `error` or `error_message` on that field:
+
+```ruby
+doc {
+  query! :page, Integer, error: "choose a page first"
+  query :role, String, validate: -> { false }, error_message: -> { "is not allowed for #{current_user}" }
+  json data: {
+    birthday!: { type: Date, error_message: ->(error, value) { "#{error}: #{value.inspect}" } }
   }
 }
 ```

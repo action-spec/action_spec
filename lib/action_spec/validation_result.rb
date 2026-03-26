@@ -40,7 +40,9 @@ module ActionSpec
       end
     end
 
-    def add_error(attribute, type, **options)
+    def add_error(attribute, type, message: nil, **options)
+      return errors.add(attribute, message) if message
+
       if (message = ActionSpec.config.message_for(attribute, type, options))
         errors.add(attribute, message)
       else

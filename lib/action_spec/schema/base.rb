@@ -32,12 +32,12 @@ module ActionSpec
         blank != false
       end
 
-      def validate_constraints(value, result:, path:)
+      def validate_constraints(value, result:, path:, field: nil, context: nil)
         return if value.nil?
 
-        validate_enum(value, result:, path:)
-        validate_range(value, result:, path:)
-        validate_pattern(value, result:, path:)
+        validate_enum(value, result:, path:, field:, context:)
+        validate_range(value, result:, path:, field:, context:)
+        validate_pattern(value, result:, path:, field:, context:)
       end
 
       def copy
@@ -50,34 +50,36 @@ module ActionSpec
 
       private
 
-        def add_error(result, path, type, **options)
+        def add_error(result, path, type, field: nil, value: nil, context: nil, **options)
+          return field.add_error(result, path:, type:, value:, context:, **options) if field
+
           result.add_error(path.join("."), type, **options)
         end
 
-        def validate_enum(value, result:, path:)
+        def validate_enum(value, result:, path:, field:, context:)
           return if enum.blank?
           return if Array(enum).include?(value)
 
-          add_error(result, path, :inclusion)
+          add_error(result, path, :inclusion, field:, value:, context:)
         end
 
-        def validate_range(value, result:, path:)
+        def validate_range(value, result:, path:, field:, context:)
           return if range.blank?
 
           rules = range.symbolize_keys
-          add_error(result, path, :greater_than_or_equal_to, count: rules[:ge]) if rules.key?(:ge) && value < rules[:ge]
-          add_error(result, path, :greater_than, count: rules[:gt]) if rules.key?(:gt) && value <= rules[:gt]
-          add_error(result, path, :less_than_or_equal_to, count: rules[:le]) if rules.key?(:le) && value > rules[:le]
-          add_error(result, path, :less_than, count: rules[:lt]) if rules.key?(:lt) && value >= rules[:lt]
+          add_error(result, path, :greater_than_or_equal_to, field:, value:, context:, count: rules[:ge]) if rules.key?(:ge) && value < rules[:ge]
+          add_error(result, path, :greater_than, field:, value:, context:, count: rules[:gt]) if rules.key?(:gt) && value <= rules[:gt]
+          add_error(result, path, :less_than_or_equal_to, field:, value:, context:, count: rules[:le]) if rules.key?(:le) && value > rules[:le]
+          add_error(result, path, :less_than, field:, value:, context:, count: rules[:lt]) if rules.key?(:lt) && value >= rules[:lt]
         end
 
-        def validate_pattern(value, result:, path:)
+        def validate_pattern(value, result:, path:, field:, context:)
           return if pattern.blank?
 
           matcher = pattern.is_a?(Regexp) ? pattern : Regexp.new(pattern.to_s)
           return if value.to_s.match?(matcher)
 
-          add_error(result, path, :invalid)
+          add_error(result, path, :invalid, field:, value:, context:)
         end
     end
   end

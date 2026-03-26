@@ -10,15 +10,19 @@ module ActionSpec
         @type = type
       end
 
-      def cast(value, context: nil, coerce:, result:, path:)
+      def cast(value, context: nil, coerce:, result:, path:, field: nil)
         candidate = TypeCaster.cast(type, value)
       rescue TypeCaster::CastError => error
-        result.add_error(path.join("."), :invalid_type, expected: error.expected)
+        if field
+          field.add_error(result, path:, type: :invalid_type, value:, context:, expected: error.expected)
+        else
+          result.add_error(path.join("."), :invalid_type, expected: error.expected)
+        end
         Schema::Missing
       else
         return candidate if candidate.nil?
 
-        validate_constraints(candidate, result:, path:)
+        validate_constraints(candidate, result:, path:, field:, context:)
         coerce ? candidate : value
       end
 

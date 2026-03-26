@@ -13,7 +13,7 @@ module ActionSpec
   module Schema
     Missing = Object.new.freeze
     OPTION_KEYS = %i[default desc enum range pattern length blank allow_blank example examples].freeze
-    FIELD_OPTION_KEYS = (OPTION_KEYS + %i[required transform px px_key validate]).freeze
+    FIELD_OPTION_KEYS = (OPTION_KEYS + %i[required transform px px_key validate error error_message]).freeze
 
     class << self
       def build(type = nil, **options)
@@ -31,6 +31,7 @@ module ActionSpec
           schema: build_field_schema(schema_definition_for_field(definition, required: field_required)),
           transform: explicit_transform(definition),
           validate: explicit_validate(definition),
+          error_message: explicit_error_message(definition),
           px_key: explicit_px_key(definition),
           scopes:
         )
@@ -130,6 +131,13 @@ module ActionSpec
           normalize_px_key(options[:px_key] || options[:px])
         end
 
+        def explicit_error_message(definition)
+          return unless definition.is_a?(Hash)
+
+          options = definition.symbolize_keys
+          options[:error_message] || options[:error]
+        end
+
         def normalize_px_key(value)
           return if value.nil? || value == true || value == false
 
@@ -139,7 +147,7 @@ module ActionSpec
         def strip_field_options(definition)
           return definition unless definition.is_a?(Hash)
 
-          definition.symbolize_keys.except(:required, :transform, :px, :px_key, :validate)
+          definition.symbolize_keys.except(:required, :transform, :px, :px_key, :validate, :error, :error_message)
         end
 
         def schema_definition_for_field(definition, required:)

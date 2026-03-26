@@ -3,9 +3,9 @@
 module ActionSpec
   module Schema
     class Field
-      attr_reader :name, :schema, :transform, :validate, :px_key, :scopes
+      attr_reader :name, :schema, :transform, :validate, :px_key, :scopes, :error_message
 
-      def initialize(name:, required:, schema:, transform: nil, validate: nil, px_key: nil, scopes: [])
+      def initialize(name:, required:, schema:, transform: nil, validate: nil, px_key: nil, scopes: [], error_message: nil)
         @name = name.to_sym
         @required = required
         @schema = schema
@@ -13,6 +13,7 @@ module ActionSpec
         @validate = validate
         @px_key = px_key&.to_sym
         @scopes = Array(scopes).map(&:to_sym).freeze
+        @error_message = error_message
       end
 
       def required?
@@ -50,11 +51,24 @@ module ActionSpec
         validate.present? || schema.custom_validation?
       end
 
+      def add_error(result, path:, type:, value:, context: nil, **options)
+        result.add_error(path.join("."), type, message: resolve_error_message(type, value, context:), **options)
+      end
+
       def copy
-        self.class.new(name:, required: required?, schema: schema.copy, transform:, validate:, px_key:, scopes:)
+        self.class.new(name:, required: required?, schema: schema.copy, transform:, validate:, px_key:, scopes:, error_message:)
       end
 
       private
+
+        def resolve_error_message(type, value, context:)
+          case error_message
+          when nil then nil
+          when String then error_message
+          when Proc then apply_error_proc(type, value, context:)
+          else error_message.to_s
+          end
+        end
 
         def apply_symbol_transform(value, context:)
           symbol = transform.to_sym
@@ -78,6 +92,16 @@ module ActionSpec
           return validate.call if validate.arity.zero?
 
           validate.call(value)
+        end
+
+        def apply_error_proc(type, value, context:)
+          return context.instance_exec(&error_message) if context && error_message.arity.zero?
+          return context.instance_exec(type, &error_message) if context && error_message.arity == 1
+          return context.instance_exec(type, value, &error_message) if context && (error_message.arity == 2 || error_message.arity.negative?)
+          return error_message.call if error_message.arity.zero?
+          return error_message.call(type) if error_message.arity == 1
+
+          error_message.call(type, value)
         end
 
         def invoke_context_transform(context, symbol, value)

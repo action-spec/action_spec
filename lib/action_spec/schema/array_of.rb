@@ -10,16 +10,20 @@ module ActionSpec
         @item = item
       end
 
-      def cast(value, context:, coerce:, result:, path:)
+      def cast(value, context:, coerce:, result:, path:, field: nil)
         unless value.is_a?(Array)
-          result.add_error(path.join("."), :invalid)
+          if field
+            field.add_error(result, path:, type: :invalid, value:, context:)
+          else
+            result.add_error(path.join("."), :invalid)
+          end
           return []
         end
 
         output = value.each_with_index.map do |entry, index|
-          item.cast(entry, context:, coerce:, result:, path: [*path, index])
+          item.cast(entry, context:, coerce:, result:, path: [*path, index], field: nil)
         end
-        validate_constraints(output, result:, path:)
+        validate_constraints(output, result:, path:, field:, context:)
         output
       end
 

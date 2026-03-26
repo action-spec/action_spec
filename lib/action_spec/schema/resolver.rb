@@ -12,14 +12,14 @@ module ActionSpec
         @path = [*path, field.name]
       end
 
-      def resolve
-        return resolve_missing unless present?
+        def resolve
+          return resolve_missing unless present?
 
-        return resolve_nil if value.nil?
-        return finalize(schema.blank_value(value)) if blank_string_allowed?
-        return resolve_blank if blank_disallowed?
+          return resolve_nil if value.nil?
+          return finalize(schema.blank_value(value)) if blank_string_allowed?
+          return resolve_blank if blank_disallowed?
 
-        finalize(schema.cast(value, context:, coerce:, result:, path:))
+        finalize(schema.cast(value, context:, coerce:, result:, path:, field:))
       end
 
       private
@@ -40,22 +40,22 @@ module ActionSpec
 
         def resolve_missing
           if schema.default.respond_to?(:call)
-            return finalize(schema.cast(evaluate_default(schema.default), context:, coerce:, result:, path:))
+            return finalize(schema.cast(evaluate_default(schema.default), context:, coerce:, result:, path:, field:))
           end
-          return finalize(schema.cast(schema.default, context:, coerce:, result:, path:)) unless schema.default.nil?
+          return finalize(schema.cast(schema.default, context:, coerce:, result:, path:, field:)) unless schema.default.nil?
           return finalize(schema.materialize_missing(context:, coerce:, result:, path:)) unless field.required?
 
-          result.add_error(path.join("."), :required)
+          field.add_error(result, path:, type: :required, value: nil, context:)
           Schema::Missing
         end
 
         def resolve_nil
-          result.add_error(path.join("."), field.required? ? :required : :blank)
+          field.add_error(result, path:, type: field.required? ? :required : :blank, value:, context:)
           Schema::Missing
         end
 
         def resolve_blank
-          result.add_error(path.join("."), :blank)
+          field.add_error(result, path:, type: :blank, value:, context:)
           Schema::Missing
         end
 
