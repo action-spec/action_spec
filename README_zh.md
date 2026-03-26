@@ -444,7 +444,7 @@ query :published_on, Date # blank allowed 时，blank string 会变成 nil
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
 query :request_id, String, px_key: :trace_id
-query :end_at, Integer, validate: -> { it >= px[:start_at] }
+query :end_at, Integer, validate: -> { current_user && it >= px[:start_at] }
 ```
 
 说明：
@@ -512,7 +512,30 @@ User.schemas
 User.schemas(only: %i[name phone role])
 ```
 
-`bang:` 默认是 `true`，所以必填字段会输出成 `name!:` 这样的 bang key。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
+如果想排除部分字段，也可以使用 `except:`：
+
+```ruby
+User.schemas(except: %i[phone role])
+```
+
+当 `only:` 和 `except:` 一起使用时，ActionSpec 会先应用 `only:`，再应用 `except:`。
+
+如果想提取某个 validation context 下的 validator，也可以传 `on:`：
+
+```ruby
+User.schemas(on: :create)
+```
+
+如果想直接覆盖导出结果里的 required 状态，也可以传 `required:`：  
+当 `required:` 传数组时，只有数组中的字段会被视为 required，其他所有导出字段都会被视为非 required。
+
+```ruby
+User.schemas(required: true)
+User.schemas(required: false)
+User.schemas(required: %i[name role])
+```
+
+`bang:` 默认是 `true`，所以必填字段会输出成 `name!:` 这样的 bang key。`only:` 和 `except:` 都支持普通字段名，也支持 `phone!` 这种 bang 风格的字段名。如果你更想要普通 key，也可以传 `bang: false`，这时必填信息会写成 `required: true`：
 
 ```ruby
 User.schemas(bang: false)
@@ -522,12 +545,15 @@ ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的
 
 1. 字段类型
 2. 必填状态；默认输出成 `name!:` 这样的 bang key，而在 `bang: false` 时输出成 `required: true`
-3. `enum` 定义
-4. `default`
-5. 列注释对应的 `desc`
-6. format validator 对应的 `pattern`
-7. numericality validator 对应的 `range`
-8. length validator 和字符串列长度对应的 `length`
+3. presence validator 提取出的 `allow_blank: false`；但如果该 validator 显式允许 blank，则不会提取这条约束
+4. `enum` 定义
+5. `default`
+6. 列注释对应的 `desc`
+7. format validator 对应的 `pattern`
+8. numericality validator 对应的 `range`
+9. length validator 和字符串列长度对应的 `length`
+
+带有 `if:`、`unless:` 的 validator 不会参与 schema 提取，因为这类规则无法被准确表达成无条件的静态 schema 约束。带有 `on:` / `except_on:` 的 validator 默认也不会提取，但你可以通过 `schemas(on: ...)` 显式提取某个 validation context 下的规则。`required:` 只会覆盖导出字段的 required 状态，不会移除其他已提取的约束，比如 `allow_blank: false`。
 
 输出示例：
 
@@ -535,16 +561,11 @@ ActionSpec 会尽量从 ActiveRecord / ActiveModel 中提取和 schema 有关的
 User.schemas
 # {
 #   name!: { type: String, desc: "user name", length: { maximum: 20 } },
-#   phone!: { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   phone!: { type: String, allow_blank: false, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
 #   role: { type: String, enum: %w[admin member visitor] }
 # }
-
 User.schemas(bang: false)
-# {
-#   name: { type: String, required: true, desc: "user name", length: { maximum: 20 } },
-#   phone: { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   role: { type: String, enum: %w[admin member visitor] }
-# }
+# { name: { type: String, required: true, desc: "user name", length: { maximum: 20 } }, ... }
 ```
 
 #### 5. 类型与边界矩阵

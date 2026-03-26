@@ -53,6 +53,7 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
       },
       phone!: {
         type: String,
+        allow_blank: false,
         length: { maximum: 13 },
         pattern: /\A1\d{10}\z/
       },
@@ -98,6 +99,32 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
   end
 
+  it "filters schemas by the except option" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(except: %i[phone!])).to eq(
+      name!: { type: String },
+      role: { type: String, enum: %w[admin member] }
+    )
+  end
+
   it "can emit required: true instead of bang keys" do
     user_class = Class.new(ActiveRecord::Base) do
       include ActionSpec::Schema::ActiveRecord
@@ -130,6 +157,7 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
       phone: {
         type: String,
         required: true,
+        allow_blank: false,
         length: { maximum: 13 }
       },
       role: {
@@ -165,6 +193,58 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     )
   end
 
+  it "accepts bang-style names in except even when bang output is disabled" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(except: %i[phone!], bang: false)).to eq(
+      name: { type: String, required: true },
+      role: { type: String, enum: %w[admin member] }
+    )
+  end
+
+  it "applies except after only" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(only: %i[name phone role], except: %i[phone!])).to eq(
+      name!: { type: String },
+      role: { type: String, enum: %w[admin member] }
+    )
+  end
+
   it "indexes validators once instead of rescanning them per field" do
     user_class = Class.new(ActiveRecord::Base) do
       include ActionSpec::Schema::ActiveRecord
@@ -191,5 +271,276 @@ RSpec.describe ActionSpec::Schema::ActiveRecord do
     expect(user_class).to receive(:validators).once.and_call_original
 
     user_class.schemas
+  end
+
+  it "does not extract required or allow_blank constraints from presence validators that allow blank" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[nickname])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "nickname" => Column.new(name: "nickname", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:nickname], allow_blank: true)]
+    )
+
+    expect(user_class.schemas).to eq(
+      nickname: { type: String }
+    )
+  end
+
+  it "ignores conditional validators when extracting schema constraints" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[nickname score role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "nickname" => Column.new(name: "nickname", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "score" => Column.new(name: "score", type: :integer, null: true, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [
+        DemoPresenceValidator.new(attributes: [:nickname], if: :published?),
+        DemoLengthValidator.new(attributes: [:nickname], minimum: 2, on: :create),
+        DemoNumericalityValidator.new(attributes: [:score], greater_than: 0, unless: :draft?),
+        DemoInclusionValidator.new(attributes: [:role], in: %w[admin member], if: -> { true })
+      ]
+    )
+
+    expect(user_class.schemas).to eq(
+      nickname: { type: String },
+      score: { type: Integer },
+      role: { type: String }
+    )
+  end
+
+  it "still extracts unconditional validators when conditional ones of the same type also exist" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[phone])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [
+        DemoPresenceValidator.new(attributes: [:phone], if: :published?),
+        DemoPresenceValidator.new(attributes: [:phone])
+      ]
+    )
+
+    expect(user_class.schemas).to eq(
+      phone!: { type: String, allow_blank: false }
+    )
+  end
+
+  it "extracts validators for the requested validation context via on" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[nickname score role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "nickname" => Column.new(name: "nickname", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "score" => Column.new(name: "score", type: :integer, null: true, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [
+        DemoPresenceValidator.new(attributes: [:nickname], on: :create),
+        DemoLengthValidator.new(attributes: [:nickname], minimum: 2, on: :create),
+        DemoNumericalityValidator.new(attributes: [:score], greater_than: 0, on: :create),
+        DemoInclusionValidator.new(attributes: [:role], in: %w[admin member], on: :create),
+        DemoLengthValidator.new(attributes: [:nickname], maximum: 20),
+        DemoNumericalityValidator.new(attributes: [:score], less_than: 10, on: :update)
+      ]
+    )
+
+    expect(user_class.schemas(on: :create)).to eq(
+      nickname!: { type: String, allow_blank: false, length: { minimum: 2, maximum: 20 } },
+      score: { type: Integer, range: { gt: 0 } },
+      role: { type: String, enum: %w[admin member] }
+    )
+  end
+
+  it "respects except_on for the requested validation context" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[nickname score])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "nickname" => Column.new(name: "nickname", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "score" => Column.new(name: "score", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [
+        DemoPresenceValidator.new(attributes: [:nickname], except_on: :update),
+        DemoNumericalityValidator.new(attributes: [:score], greater_than: 0, except_on: :update)
+      ]
+    )
+
+    expect(user_class.schemas(on: :create)).to eq(
+      nickname!: { type: String, allow_blank: false },
+      score: { type: Integer, range: { gt: 0 } }
+    )
+
+    expect(user_class.schemas(on: :update)).to eq(
+      nickname: { type: String },
+      score: { type: Integer }
+    )
+  end
+
+  it "can force all exported fields to be required" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return([])
+
+    expect(user_class.schemas(required: true)).to eq(
+      name!: { type: String },
+      phone!: { type: String },
+      role!: { type: String, enum: %w[admin member] }
+    )
+
+    expect(user_class.schemas(required: true, bang: false)).to eq(
+      name: { type: String, required: true },
+      phone: { type: String, required: true },
+      role: { type: String, enum: %w[admin member], required: true }
+    )
+  end
+
+  it "can force all exported fields to be non-required" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:phone])]
+    )
+
+    expect(user_class.schemas(required: false)).to eq(
+      name: { type: String },
+      phone: { type: String, allow_blank: false },
+      role: { type: String, enum: %w[admin member] }
+    )
+  end
+
+  it "can mark only selected fields as required" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[name phone role])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "name" => Column.new(name: "name", type: :string, null: false, default: nil, comment: nil, limit: nil),
+      "phone" => Column.new(name: "phone", type: :string, null: true, default: nil, comment: nil, limit: nil),
+      "role" => Column.new(name: "role", type: :integer, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return(
+      "role" => { "admin" => 0, "member" => 1 }
+    )
+    allow(user_class).to receive(:validators).and_return(
+      [DemoPresenceValidator.new(attributes: [:phone])]
+    )
+
+    expect(user_class.schemas(required: %i[role phone!])).to eq(
+      name: { type: String },
+      phone!: { type: String, allow_blank: false },
+      role!: { type: String, enum: %w[admin member] }
+    )
+
+    expect(user_class.schemas(required: %i[role phone!], bang: false)).to eq(
+      name: { type: String },
+      phone: { type: String, allow_blank: false, required: true },
+      role: { type: String, enum: %w[admin member], required: true }
+    )
+  end
+
+  it "still ignores if and unless even when on is provided" do
+    user_class = Class.new(ActiveRecord::Base) do
+      include ActionSpec::Schema::ActiveRecord
+
+      def self.name
+        "User"
+      end
+    end
+
+    allow(user_class).to receive(:column_names).and_return(%w[nickname])
+    allow(user_class).to receive(:columns_hash).and_return(
+      "nickname" => Column.new(name: "nickname", type: :string, null: true, default: nil, comment: nil, limit: nil)
+    )
+    allow(user_class).to receive(:defined_enums).and_return({})
+    allow(user_class).to receive(:validators).and_return(
+      [
+        DemoPresenceValidator.new(attributes: [:nickname], on: :create, if: :published?),
+        DemoLengthValidator.new(attributes: [:nickname], on: :create, unless: :draft?, minimum: 2)
+      ]
+    )
+
+    expect(user_class.schemas(on: :create)).to eq(
+      nickname: { type: String }
+    )
   end
 end

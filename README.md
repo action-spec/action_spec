@@ -443,7 +443,7 @@ query :published_on, Date # blank strings become nil when blank is allowed
 query :nickname, String, transform: :downcase
 query :page, Integer, transform: -> { it + 1 }, px: :page_number
 query :request_id, String, px_key: :trace_id
-query :end_at, Integer, validate: -> { it >= px[:start_at] }
+query :end_at, Integer, validate: -> { current_user && it >= px[:start_at] }
 ```
 
 Notes:
@@ -509,7 +509,30 @@ You can also limit the exported fields:
 User.schemas(only: %i[name phone role])
 ```
 
-`bang:` defaults to `true`, so required fields are emitted as bang keys such as `name!:`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
+Or exclude specific fields:
+
+```ruby
+User.schemas(except: %i[phone role])
+```
+
+When `only:` and `except:` are used together, ActionSpec applies `except:` after `only:`.
+
+You can also extract validators for a specific validation context:
+
+```ruby
+User.schemas(on: :create)
+```
+
+You can also override requiredness in the exported schema:  
+When `required:` is an array, only the listed fields are treated as required, and every other exported field is treated as non-required.
+
+```ruby
+User.schemas(required: true)
+User.schemas(required: false)
+User.schemas(required: %i[name role])
+```
+
+`bang:` defaults to `true`, so required fields are emitted as bang keys such as `name!:`. `only:` and `except:` both accept plain names or bang-style names such as `phone!`. If you prefer plain keys, you can pass `bang: false`, and required fields will be emitted as `required: true` instead:
 
 ```ruby
 User.schemas(bang: false)
@@ -519,6 +542,7 @@ ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel 
 
 - field type
 - requiredness, rendered either as bang keys such as `name!:` or as `required: true` when `bang: false`
+- `allow_blank: false` from presence validators unless that validator explicitly allows blank
 - enum values from `enum`
 - `default`
 - `desc` from column comments
@@ -526,22 +550,19 @@ ActionSpec extracts schema-relevant information from ActiveRecord / ActiveModel 
 - `range` from numericality validators
 - `length` from length validators and string column limits
 
+Conditional validators with `if:` or `unless:` are skipped during schema extraction, because they cannot be represented as unconditional static schema rules. Validators with `on:` / `except_on:` are skipped by default, but can be extracted by passing `schemas(on: ...)`. The `required:` option overrides the requiredness of exported fields only; it does not remove other extracted constraints such as `allow_blank: false`.
+
 Example output:
 
 ```ruby
 User.schemas
 # {
 #   name!: { type: String, desc: "user name", length: { maximum: 20 } },
-#   phone!: { type: String, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
+#   phone!: { type: String, allow_blank: false, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
 #   role: { type: String, enum: %w[admin member visitor] }
 # }
-
 User.schemas(bang: false)
-# {
-#   name: { type: String, required: true, desc: "user name", length: { maximum: 20 } },
-#   phone: { type: String, required: true, length: { maximum: 13 }, pattern: /\A1\d{10}\z/ },
-#   role: { type: String, enum: %w[admin member visitor] }
-# }
+# { name: { type: String, required: true, desc: "user name", length: { maximum: 20 } }, ... }
 ```
 
 #### Type And Boundary Matrix
