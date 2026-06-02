@@ -146,6 +146,30 @@ RSpec.describe ActionSpec::Doc do
     expect(request.body.field(:user)).to be_custom_validation
   end
 
+  it "updates cached custom validation lookups when fields are added later" do
+    request = ActionSpec::Doc::Request.new
+
+    expect(request).not_to be_custom_validation
+    expect(request.query).not_to be_custom_validation
+
+    request.add_param(
+      :query,
+      ActionSpec::Schema.build_field(
+        :filters,
+        {
+          type: {
+          keyword: { type: String, validate: -> { it.present? } }
+          }
+        }
+      )
+    )
+
+    expect(request).to be_custom_validation
+    expect(request.custom_validation_locations.map(&:name)).to eq([:query])
+    expect(request.query).to be_custom_validation
+    expect(request.query.custom_validation_fields.map(&:name)).to eq([:filters])
+  end
+
   it "does not expose the removed resp alias" do
     controller = build_controller do
       doc :create do
@@ -192,5 +216,33 @@ RSpec.describe ActionSpec::Doc do
 
     expect(endpoint.responses.fetch("200").media_types.keys).to eq([:form])
     expect(endpoint.responses.fetch("503").media_types.keys).to eq([:form])
+  end
+
+  it "accepts openapi: false as a doc option" do
+    controller = build_controller do
+      doc :create, openapi: false do
+        query :page, Integer
+      end
+
+      def create; end
+    end
+
+    expect(controller.action_spec_for(:create).options[:openapi]).to eq(false)
+  end
+
+  it "accepts openapi: true as a doc option and lets it override dry options" do
+    base_controller = build_controller do
+      doc_dry :index, openapi: false
+    end
+
+    controller = Class.new(base_controller) do
+      doc :index, openapi: true do
+        query :page, Integer
+      end
+
+      def index; end
+    end
+
+    expect(controller.action_spec_for(:index).options[:openapi]).to eq(true)
   end
 end

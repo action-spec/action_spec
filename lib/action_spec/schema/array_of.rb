@@ -32,7 +32,7 @@ module ActionSpec
       end
 
       def custom_validation?
-        item.custom_validation?
+        @custom_validation ||= item.custom_validation?
       end
     end
   end

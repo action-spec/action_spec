@@ -121,10 +121,14 @@ RSpec.describe ActionSpec::Schema::TypeCaster do
     end
 
     context "with Object" do
-      it "passes object-like values through" do
+      it "accepts hash-like values" do
         input = { "name" => "Tom" }
 
         expect(described_class.cast(Object, input)).to equal(input)
+      end
+
+      it "rejects non-hash values" do
+        expect { described_class.cast(Object, "Tom") }.to raise_error(ActionSpec::Schema::TypeCaster::CastError)
       end
     end
   end

@@ -38,7 +38,11 @@ module ActionSpec
       end
 
       def custom_validation?
-        fields.any? { |_name, field| field.custom_validation? }
+        custom_validation_fields.any?
+      end
+
+      def custom_validation_fields
+        @custom_validation_fields ||= fields.each_value.select(&:custom_validation?).freeze
       end
 
       private

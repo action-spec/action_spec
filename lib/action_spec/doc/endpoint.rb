@@ -57,11 +57,13 @@ module ActionSpec
 
       def add_param(location_name, field)
         location(location_name).add(field)
+        clear_custom_validation_cache!
       end
 
       def add_body(media_type, field)
         body.add(field)
         (@body_media_types[media_type.to_sym] ||= Location.new(media_type.to_sym)).add(field.copy)
+        clear_custom_validation_cache!
       end
 
       def register_scope(name, compact: nil, compact_blank: nil)
@@ -91,6 +93,7 @@ module ActionSpec
         @body_media_types = other.body_media_types
         @scope_options = other.scope_options
         @body_required = other.body_required?
+        clear_custom_validation_cache!
       end
 
       def copy
@@ -110,8 +113,18 @@ module ActionSpec
       end
 
       def custom_validation?
-        [header, path, query, cookie, body].any?(&:custom_validation?)
+        custom_validation_locations.any?
       end
+
+      def custom_validation_locations
+        @custom_validation_locations ||= [header, path, query, cookie, body].select(&:custom_validation?).freeze
+      end
+
+      private
+
+        def clear_custom_validation_cache!
+          remove_instance_variable(:@custom_validation_locations) if instance_variable_defined?(:@custom_validation_locations)
+        end
     end
 
     class Location
@@ -126,6 +139,7 @@ module ActionSpec
 
       def add(field)
         @fields[field.name] = field
+        clear_custom_validation_cache!
       end
 
       def field(name)
@@ -151,7 +165,17 @@ module ActionSpec
       end
 
       def custom_validation?
-        fields.any?(&:custom_validation?)
+        custom_validation_fields.any?
+      end
+
+      def custom_validation_fields
+        @custom_validation_fields ||= fields.select(&:custom_validation?).freeze
+      end
+
+      private
+
+        def clear_custom_validation_cache!
+          remove_instance_variable(:@custom_validation_fields) if instance_variable_defined?(:@custom_validation_fields)
       end
     end
 

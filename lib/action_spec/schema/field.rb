@@ -48,7 +48,7 @@ module ActionSpec
       end
 
       def custom_validation?
-        validate.present? || schema.custom_validation?
+        @custom_validation ||= validate.present? || schema.custom_validation?
       end
 
       def add_error(result, path:, type:, value:, context: nil, **options)

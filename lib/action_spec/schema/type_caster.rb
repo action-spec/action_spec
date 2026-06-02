@@ -17,7 +17,7 @@ module ActionSpec
           return value if value.nil?
 
           normalized = normalize(type)
-          return value if normalized == :object
+          return cast_object(value) if normalized == :object
           return cast_file(value) if normalized == :file
           return cast_boolean(value) if normalized == :boolean
           return cast_integer(value) if normalized == :integer
@@ -65,6 +65,12 @@ module ActionSpec
             return value if file_like?(value)
 
             raise CastError, :file
+          end
+
+          def cast_object(value)
+            return value if value.is_a?(Hash) || value.is_a?(ActionController::Parameters)
+
+            raise CastError, :object
           end
 
           def cast_integer(value)

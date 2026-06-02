@@ -10,8 +10,9 @@ Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md
 
 ## Table Of Contents
 
-1. [OpenAPI Generation](#openapi-generation)
-2. [Doc DSL](#doc-dsl)
+1. [AI Agent Quick Reference](#ai-agent-quick-reference)
+2. [OpenAPI Generation](#openapi-generation)
+3. [Doc DSL](#doc-dsl)
    1. [`doc`](#doc)
    2. [`doc_dry`](#doc_dry)
    3. [DSL Inside `doc`](#dsl-inside-doc)
@@ -20,21 +21,21 @@ Concise and Powerful API Documentation Solution for Rails. [中文](README_zh.md
       3. [`openapi false`](#openapi-false)
       4. [Scope](#scope)
       5. [Response](#response)
-3. [Schemas](#schemas)
+4. [Schemas](#schemas)
    1. [Declare A Required Field](#declare-a-required-field)
    2. [Field Types](#field-types)
    3. [Field Options](#field-options)
    4. [Schemas From ActiveRecord](#schemas-from-activerecord)
    5. [Type And Boundary Matrix](#type-and-boundary-matrix)
-4. [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
+5. [Parameter Validation And Type Coercion](#parameter-validation-and-type-coercion)
    1. [Validation Flow](#validation-flow)
    2. [Reading Processed Values With `px`](#reading-processed-values-with-px)
    3. [`px` is Whitelist Extraction](#px-is-whitelist-extraction)
    4. [Errors](#errors)
-5. [Configuration And I18n](#configuration-and-i18n)
+6. [Configuration And I18n](#configuration-and-i18n)
    1. [Configuration](#configuration)
    2. [I18n](#i18n)
-6. [AI Generation Style Guide](#ai-generation-style-guide)
+7. [AI Generation Style Guide](#ai-generation-style-guide)
 
 ## Example
 
@@ -70,6 +71,18 @@ class UsersController < ApplicationController
   end
 end
 ```
+
+## AI Agent Quick Reference
+
+When generating Rails controller code with ActionSpec, use these as the canonical choices:
+
+- put `doc { }` or `doc("Summary") { }` immediately above the action method and let ActionSpec infer the action name
+- use `{ }` blocks inside `doc`
+- prefer bang required syntax, such as `query! :id, Integer` and `name!: String`; keep `required: true` for compatibility or generated schemas
+- fold simple nested hash fields, `data: { }`, or `in_xxx(...)` declarations into one line when they have 2 fields or fewer and no complex nesting, such as `json data: { name: String, age: Integer }` or `in_query(name: String, value: String)`
+- declare body fields as `json data: { name!: String }` or `form data: { avatar!: File }`
+- use `doc_dry`, `scope`, `transform`, `px` / `px_key`, `.schemas`, and `px.slice` to keep controller actions small
+- rely on ActionSpec for parameter validation, type coercion, defaults, and similar contracts instead of rewriting the same parameter handling by hand
 
 ## Installation
 
@@ -142,7 +155,7 @@ def create
 end
 ```
 
-You can also bind it explicitly when you want the action name declared in place:
+Escape hatch: bind the action explicitly when the inferred next method is not the intended action:
 
 ```ruby
 doc(:create, "Create user") {
@@ -211,7 +224,7 @@ end
 
 With `required_allow_blank = false`, required fields reject blank strings unless that field explicitly sets `blank:` or `allow_blank:`.
 
-If you prefer not to use bang methods, you can also write `required: true`:
+Compatibility alternative: if you prefer not to use bang methods, you can also write `required: true`:
 
 ```ruby
 query :page, Integer, required: true
@@ -285,7 +298,16 @@ Notes:
 You can also opt an action out of OpenAPI generation from either `doc` or `doc_dry`:
 
 ```ruby
-openapi false
+doc(openapi: false) { }
+doc_dry(:index, openapi: false)
+```
+
+Or inside the block:
+
+```ruby
+doc {
+  openapi false
+}
 ```
 
 #### Scope
@@ -475,6 +497,7 @@ query :birthday, Date, error: "birthday error"
 - `transform`
   - Applies one more custom transformation to the **already-coerced value**.
   - Accepts a `Symbol` or a `Proc`.
+  - `transform` does not run when the field does not successfully resolve to a value, such as when it is missing, `nil`, or already rejected by an earlier validation step.
 - `px` / `px_key`
   - Customize the key name used when the parameter is written into `px`.
 - `validate`
@@ -620,7 +643,7 @@ User.schemas(bang: false)
 | `DateTime` | `"2025-10-17T12:30:00Z"` | Rejects invalid datetimes such as `"2025-10-17 25:00:00"` |
 | `Time` | `"2025-10-17T12:30:00Z"` | Follows `ActiveModel::Type::Time`, so the date part becomes `2000-01-01` |
 | `File` | `ActionDispatch::Http::UploadedFile`, `Tempfile`, file-like IO objects | Keeps the object as-is and does not read file contents into memory |
-| `Object` | `Hash`, `ActionController::Parameters`, arbitrary Ruby objects | Passed through for scalar `Object`; nested hashes use object schema resolution |
+| `Object` | `Hash`, `ActionController::Parameters` | Scalar `Object` behaves like `Hash` and rejects non-hash values; nested hashes use object schema resolution |
 | `[Type]` | arrays such as `%w[1 2 3]` for `[Integer]` | Rejects non-array values, and reports item errors like `tags.1` |
 | nested object | `{ profile: { nickname: "neo" } }` | Rejects non-hash values, and reports nested paths like `profile.nickname` |
 
@@ -810,25 +833,18 @@ If you want to override one specific field directly in the DSL, use `error` or `
 ```ruby
 doc {
   query! :page, Integer, error: "choose a page first"
-  query :role, String, validate: -> { false }, error_message: -> { "is not allowed for #{current_user}" }
+  query :role, String, validate: -> { false }, error: -> { "is not allowed for #{current_user}" }
   json data: {
-    birthday!: { type: Date, error_message: ->(error, value) { "#{error}: #{value.inspect}" } }
+    birthday!: { type: Date, error: ->(error, value) { "#{error}: #{value.inspect}" } }
   }
 }
 ```
 
 ## AI Generation Style Guide
 
-When using AI tools to generate Rails controller code, and the change involves parameter validation, type coercion, default values, or similar parameter contracts, these conventions work well with ActionSpec:
+When using AI tools to generate Rails controller code, treat the [AI Agent Quick Reference](#ai-agent-quick-reference) as the source of truth.
 
-- use `doc { }` or `doc("Summary") { }`; do not add the action name, and do not leave a blank line between the `doc` block and the action method
-- use `{ }` blocks inside `doc` as well; prefer them over `do ... end`
-- when a batch has 3 fields or fewer and does not contain nested hashes, prefer a single-line style, for example:
-  - `json data: { type: String, required: true }`
-  - `in_query(name: String, value: String)` (prefer `in_xxx(...)` batch declarations over multiple `xx` DSL lines when possible)
-- use `!` but not `required: true`
-- use `doc_dry`, `scope`, and `transform`、`px(px_key)`、`px.slice` to keep controller concise
-- when request parameters match model declarations, prefer `.schemas` to keep `doc` concise
+The rest of this README documents all supported forms, including compatibility alternatives such as `doc(:action, ...)` and `required: true`, but generated code should follow the quick reference unless the existing application style requires otherwise.
 
 ## What Is Not Implemented Yet
 

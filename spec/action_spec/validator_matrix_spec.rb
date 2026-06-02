@@ -32,6 +32,55 @@ RSpec.describe ActionSpec::Validator do
     expect(px[:tags]).to eq([1, 2, 3])
   end
 
+  it "applies item schemas when array items use the [{ type: ... }] form" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          ids!: [{ type: Integer, range: { gt: 0 } }]
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(ids: %w[1 2 3])
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:ids]).to eq([1, 2, 3])
+  end
+
+  it "reports item errors when the [{ type: ... }] form fails validation" do
+    controller = build_controller do
+      doc :create do
+        json data: {
+          ids!: [{ type: Integer, range: { gt: 0 } }]
+        }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(ids: %w[1 0])
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors.details).to include(:"ids.1" => include(error: :greater_than, count: 0))
+  end
+
   it "records nested and array-item validation failures with precise attribute paths" do
     controller = build_controller do
       before_action :validate_and_coerce_params!

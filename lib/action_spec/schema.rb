@@ -39,7 +39,7 @@ module ActionSpec
 
       def from_definition(definition)
         return Scalar.new(String) if definition.blank?
-        return ArrayOf.new(from_definition(type: definition.first)) if definition.is_a?(Array) && definition.one?
+        return ArrayOf.new(from_definition(definition.first)) if definition.is_a?(Array) && definition.one?
         return ArrayOf.new(from_definition(type: nil)) if definition == []
         return Scalar.new(definition) unless definition.is_a?(Hash)
 
@@ -47,7 +47,7 @@ module ActionSpec
         if definition.key?(:type)
           type = definition[:type]
           options = definition.slice(*OPTION_KEYS)
-          return ArrayOf.new(from_definition(type: type.first), options) if type.is_a?(Array) && type.one?
+          return ArrayOf.new(from_definition(type.first), options) if type.is_a?(Array) && type.one?
           return ArrayOf.new(from_definition(type: nil), options) if type == []
           if type.is_a?(Hash)
             return Scalar.new(Object, options) if type.empty?

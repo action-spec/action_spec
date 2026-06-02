@@ -25,14 +25,6 @@ module ActionSpec
 
         attr_reader :endpoint, :controller, :coerce
 
-        BUILT_IN_GROUPS = {
-          path: ->(request) { request.path },
-          query: ->(request) { request.query },
-          body: ->(request) { request.body },
-          headers: ->(request) { request.header },
-          cookies: ->(request) { request.cookie }
-        }.freeze
-
         def merge_body!(result)
           if endpoint.request.body_required? && body_source.blank?
             result.add_error("body", :required)
@@ -101,14 +93,15 @@ module ActionSpec
           field.name
         end
 
-      def apply_custom_validations!(result)
-        return unless endpoint.request.custom_validation?
+        def apply_custom_validations!(result)
+          return unless endpoint.request.custom_validation?
 
-        with_controller_px(result.px) do
-          BUILT_IN_GROUPS.each do |location, group_reader|
-            validate_group!(
+          with_controller_px(result.px) do
+            endpoint.request.custom_validation_locations.each do |group|
+              location = group.name
+              validate_group!(
                 result,
-                group_reader.call(endpoint.request),
+                group,
                 values: result.px.scope.fetch(location),
                 location:
               )
@@ -119,9 +112,7 @@ module ActionSpec
         def validate_group!(result, group, values:, location:)
           return unless group.custom_validation?
 
-          group.fields.each do |field|
-            next unless field.custom_validation?
-
+          group.custom_validation_fields.each do |field|
             key = storage_key(field, location)
             next unless values.key?(key)
 
@@ -144,8 +135,7 @@ module ActionSpec
             return unless value.is_a?(Hash)
 
             source = value.with_indifferent_access
-            schema.fields.each_value do |field|
-              next unless field.custom_validation?
+            schema.custom_validation_fields.each do |field|
               next unless source.key?(field.output_name)
 
               validate_field!(field, source[field.output_name], result:, path: [*path, field.name])
@@ -167,8 +157,7 @@ module ActionSpec
             return unless value.is_a?(Hash)
 
             source = value.with_indifferent_access
-            schema.fields.each_value do |field|
-              next unless field.custom_validation?
+            schema.custom_validation_fields.each do |field|
               next unless source.key?(field.output_name)
 
               validate_field!(field, source[field.output_name], result:, path: [*path, field.name])

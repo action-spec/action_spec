@@ -148,6 +148,39 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     expect(operation.fetch("responses")).to eq("200" => { "description" => "OK" })
   end
 
+  it "applies item schemas when arrays use the [{ type: ... }] form" do
+    stub_const("ReportsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Create report") do
+        json data: {
+          ids!: [{ type: Integer, range: { gt: 0 } }]
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/reports",
+          defaults: { controller: "reports", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    schema = document.dig("paths", "/reports", "post", "requestBody", "content", "application/json", "schema")
+
+    expect(schema.dig("properties", "ids")).to include(
+      "type" => "array",
+      "items" => include("type" => "integer", "exclusiveMinimum" => 0)
+    )
+  end
+
   it "marks request bodies as required for json! and required: true declarations" do
     stub_const("ProfilesController", Class.new(ActionController::Base) do
       include ActionSpec::Doc
@@ -598,6 +631,32 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     expect(document.fetch("paths")).to eq({})
   end
 
+  it "skips endpoints marked with doc(openapi: false)" do
+    stub_const("PrivateUsersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:index, "Private users", openapi: false) do
+        query :page, Integer
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/private/users",
+          defaults: { controller: "private_users", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    expect(document.fetch("paths")).to eq({})
+  end
+
   it "skips endpoints marked with openapi false inside doc_dry" do
     stub_const("AdminReportsController", Class.new(ActionController::Base) do
       include ActionSpec::Doc
@@ -626,6 +685,36 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     ).call
 
     expect(document.fetch("paths")).to eq({})
+  end
+
+  it "lets doc(openapi: true) override doc_dry(openapi: false)" do
+    stub_const("MembersController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc_dry :index, openapi: false
+
+      doc(:index, "List members", openapi: true) do
+        query :page, Integer
+      end
+
+      def index; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "GET",
+          path: "/members",
+          defaults: { controller: "members", action: "index" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    operation = document.dig("paths", "/members", "get")
+
+    expect(operation.fetch("summary")).to eq("List members")
   end
 
   it "writes YAML output when asked" do

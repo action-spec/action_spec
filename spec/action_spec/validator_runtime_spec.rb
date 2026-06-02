@@ -196,6 +196,52 @@ RSpec.describe ActionSpec::Validator do
     expect(result.px[:settings]).to eq("theme" => "dark")
   end
 
+  it "rejects scalar Object fields when the value is not hash-like" do
+    controller = build_controller do
+      doc :create do
+        query :settings, Object
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(settings: "dark")
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors.details[:settings]).to include(error: :invalid_type, expected: :object)
+    expect(result.px).not_to have_key(:settings)
+  end
+
+  it "accepts scalar Object fields when the value is hash-like" do
+    controller = build_controller do
+      doc :create do
+        query :settings, Object
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(settings: { theme: "dark" })
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors).to be_empty
+    expect(result.px[:settings]).to eq("theme" => "dark")
+  end
+
   it "applies object defaults and transform for schemas declared through type: { ... }" do
     controller = build_controller do
       doc :create do
@@ -400,6 +446,32 @@ RSpec.describe ActionSpec::Validator do
     expect(px.scope[:query]).to include(page_number: 3, slug_value: "NEO", keyword: "ruby")
     expect(px.scope[:headers]).to include(request_id: "req-1")
     expect(px.scope[:search]).to include(keyword: "ruby")
+  end
+
+  it "skips transform when the incoming value is nil" do
+    transformed = false
+
+    controller = build_controller do
+      doc :create do
+        query :nickname, String, transform: ->(value) { transformed = true; value.strip }
+      end
+
+      def create; end
+    end
+
+    request = Struct.new(:path_parameters, :headers).new({}, {})
+    params = ActionController::Parameters.new(nickname: nil)
+    runner_controller = Struct.new(:params, :request).new(params, request)
+
+    result = ActionSpec::Validator::Runner.new(
+      endpoint: controller.action_spec_for(:create),
+      controller: runner_controller,
+      coerce: true
+    ).call
+
+    expect(result.errors.details).to include(nickname: include(error: :blank))
+    expect(result.px).not_to have_key(:nickname)
+    expect(transformed).to eq(false)
   end
 
   it "applies nested field options before the outer object field transform" do

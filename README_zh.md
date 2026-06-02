@@ -10,8 +10,9 @@ Concise and Powerful API Documentation Solution for Rails.
 
 ## 目录
 
-1. [OpenAPI 生成](#openapi-生成)
-2. [Doc DSL](#doc-dsl)
+1. [AI Agent 快速参考](#ai-agent-快速参考)
+2. [OpenAPI 生成](#openapi-生成)
+3. [Doc DSL](#doc-dsl)
    1. [`doc`](#doc)
    2. [`doc_dry`](#doc_dry)
    3. [`doc` 内的 DSL](#doc-内的-dsl)
@@ -20,21 +21,21 @@ Concise and Powerful API Documentation Solution for Rails.
       3. [`openapi false`](#3-openapi-false)
       4. [Scope](#4-scope)
       5. [response](#5-response)
-3. [Schemas](#schemas)
+4. [Schemas](#schemas)
    1. [声明字段为必填项（required）](#1-声明字段为必填项required)
    2. [字段类型](#2-字段类型)
    3. [字段选项](#3-字段选项)
    4. [从 ActiveRecord 生成 Schemas](#4-从-activerecord-生成-schemas)
    5. [类型与边界矩阵](#5-类型与边界矩阵)
-4. [参数验证和类型转换](#参数验证和类型转换)
+5. [参数验证和类型转换](#参数验证和类型转换)
    1. [参数处理流程](#参数处理流程)
    2. [`px` 里的值怎么读](#px-里的值怎么读)
    3. [`px` 是白名单提取](#px-是白名单提取)
    4. [错误处理](#错误处理)
-5. [配置和 I18n](#配置和-i18n)
+6. [配置和 I18n](#配置和-i18n)
    1. [配置](#配置)
    2. [I18n](#i18n)
-6. [AI 生成风格指导](#ai-生成风格指导)
+7. [AI 生成风格指导](#ai-生成风格指导)
 
 ## 示例
 
@@ -70,6 +71,18 @@ class UsersController < ApplicationController
   end
 end
 ```
+
+## AI Agent 快速参考
+
+使用 ActionSpec 生成 Rails controller 代码时，优先采用下面这些规范：
+
+- 将 `doc { }` 或 `doc("描述") { }` 紧贴 action 方法上方，让 ActionSpec 自动推断 action name
+- `doc` 内部统一使用 `{ }` 块
+- 优先使用 bang required 语法，例如 `query! :id, Integer` 和 `name!: String`；`required: true` 主要用于兼容写法或生成出来的 schemas
+- Hash 嵌套字段、`data: { }` 或 `in_xxx(...)` 声明在字段数小于等于 2 个、且没有复杂嵌套结构时，优先折叠成一行，例如 `json data: { name: String, age: Integer }` 或 `in_query(name: String, value: String)`
+- request body 字段应写成 `json data: { name!: String }` 或 `form data: { avatar!: File }`
+- 使用 `doc_dry`、`scope`、`transform`、`px` / `px_key`、`.schemas` 和 `px.slice` 简化 controller action
+- 尽量利用 ActionSpec 的参数校验、类型转换、默认值等能力，不要在 controller 里重新手写一遍参数处理逻辑
 
 ## 安装
 
@@ -142,7 +155,7 @@ def create
 end
 ```
 
-如果你希望显式把 action 写出来，也可以这样：
+例外写法：当自动推断出来的下一个方法不是目标 action 时，可以显式绑定 action：
 
 ```ruby
 doc(:create, "创建用户") {
@@ -211,7 +224,7 @@ end
 
 当 `required_allow_blank = false` 时，required 字段会拒绝 blank string；如果某个字段单独写了 `blank:` 或 `allow_blank:`，则以字段自身声明为准。
 
-如果你不想使用 bang，也可以写 `required: true`：
+兼容写法：如果你不想使用 bang，也可以写 `required: true`：
 
 ```ruby
 query :page, Integer, required: true
@@ -280,10 +293,19 @@ data :file, File
 
 #### 3. `openapi false`
 
-如果你希望某个 action 不进入 OpenAPI 文档，也可以在 `doc` 或 `doc_dry` 中这样写：
+如果你希望某个 action 不进入 OpenAPI 文档，也可以直接给 `doc` 或 `doc_dry` 传 `openapi: false`：
 
 ```ruby
-openapi false
+doc(openapi: false) { }
+doc_dry(:index, openapi: false)
+```
+
+也可以继续在块内部写：
+
+```ruby
+doc {
+  openapi false
+}
 ```
 
 #### 4. Scope
@@ -471,6 +493,7 @@ query :birthday, Date, error: "birthday error"
 - `transform`
   - 对**类型转换之后的值**再进行一次自定义转换。
   - 支持传入 `Symbol` 或 `Proc`。
+  - 如果字段最终没有成功解析出值，例如缺失、值为 `nil`，或在前置校验阶段已失败，则不会执行 `transform`。
 - `px` / `px_key`
   - 自定义参数写入 `px` 时使用的 key 名。
 - `validate`
@@ -618,7 +641,7 @@ User.schemas(bang: false)
 | `DateTime` | `"2025-10-17T12:30:00Z"` | 拒绝非法时间，例如 `"2025-10-17 25:00:00"` |
 | `Time` | `"2025-10-17T12:30:00Z"` | 遵循 `ActiveModel::Type::Time`，日期部分会变成 `2000-01-01` |
 | `File` | `ActionDispatch::Http::UploadedFile`、`Tempfile`、类文件 IO 对象 | 保留原对象，不会把文件内容读进内存 |
-| `Object` | `Hash`、`ActionController::Parameters`、任意 Ruby 对象 | 作为标量 `Object` 时原样透传；嵌套 hash 会按对象 schema 递归解析 |
+| `Object` | `Hash`、`ActionController::Parameters` | 标量 `Object` 与 `Hash` 语义一致，会拒绝非 hash 值；嵌套 hash 会按对象 schema 递归解析 |
 | `[Type]` | 比如 `[Integer]` 接收 `%w[1 2 3]` | 非数组会报错，数组项错误会记录成 `tags.1` 这种路径 |
 | 嵌套对象 | `{ profile: { nickname: "neo" } }` | 非 hash 会报错，嵌套字段错误会记录成 `profile.nickname` |
 
@@ -806,31 +829,24 @@ ActionSpec.configure { |config|
 ```ruby
 doc {
   query! :page, Integer, error: "choose a page first"
-  query :role, String, validate: -> { false }, error_message: -> { "is not allowed for #{current_user}" }
+  query :role, String, validate: -> { false }, error: -> { "is not allowed for #{current_user}" }
   json data: {
-    birthday!: { type: Date, error_message: ->(error, value) { "#{error}: #{value.inspect}" } }
+    birthday!: { type: Date, error: ->(error, value) { "#{error}: #{value.inspect}" } }
   }
 }
 ```
 
 ## AI 生成风格指导
 
-当你使用 AI 生成 Rails controller 代码，并且涉及参数校验、参数类型转换、参数默认值等情况时，下面这些约定更适合配合 ActionSpec：
+当你使用 AI 生成 Rails controller 代码时，以前面的 [AI Agent 快速参考](#ai-agent-快速参考) 作为首选规则来源。
 
-- 使用 `doc { }` 或 `doc("描述") { }`，不要显式写 action name，并且 `doc` 块和 action 方法之间不要留空行
-- `doc` 及其内部统一使用 `{ }` 块，不使用 `do ... end`
-- 对于批量声明的参数，在数量小于等于 3 个，并且没有 hash 嵌套时，优先写成一行，例如：
-   - `json data: { type: String, required: true }`
-   - `in_query(name: String, value: String)`（优先使用 `in_xxx(...)` 这类批量声明，而不是拆成多行 `xx` DSL）
-- 使用 `!` 而不是 `required: true`
-- 用 `doc_dry`、`scope` 和 `transform`、`px(px_key)`、`px.slice` 来简化 controller 代码
-- 当接口参数规格与模型层声明一致时，优先使用 `.schemas` 来简化 `doc` 代码
+本文档其他部分会说明所有受支持的写法，包括 `doc(:action, ...)`、`required: true` 等兼容写法；但除非当前应用已有不同风格，否则生成代码应优先遵循快速参考。
 
 ## 当前还没实现的部分
 
 1. 可复用的 `components` 生成
 2. `$ref` 生成与去重
-3. operation 上的 `description`、`operationId`、`externalDocs`、`deprecated`、`security`
+3. operation 上的 `description`、`externalDocs`、`deprecated`、`security`
 4. parameter 上的 `style`、`explode`、`allowReserved`、`examples`，以及更完整的 header / cookie 序列化控制
 5. request body 的 `encoding`
 6. 除当前 DSL 直接映射之外的更多 request / response media type
