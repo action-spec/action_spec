@@ -38,6 +38,8 @@ module ActionSpec
       end
 
       def from_definition(definition)
+        return Scalar.new(definition) if definition.is_a?(Class)
+        return Scalar.new(definition) if definition.is_a?(Symbol)
         return Scalar.new(String) if definition.blank?
         return ArrayOf.new(from_definition(definition.first)) if definition.is_a?(Array) && definition.one?
         return ArrayOf.new(from_definition(type: nil)) if definition == []

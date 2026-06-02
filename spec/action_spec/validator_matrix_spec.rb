@@ -57,6 +57,23 @@ RSpec.describe ActionSpec::Validator do
     expect(result.px[:ids]).to eq([1, 2, 3])
   end
 
+  it "loads array file schemas without calling File.empty?" do
+    controller = build_controller do
+      doc :create do
+        form data: {
+          credential_keys: { type: [File], default: [] }
+        }
+      end
+
+      def create; end
+    end
+
+    field = controller.action_spec_for(:create).request.body.field(:credential_keys)
+
+    expect(field.schema).to be_a(ActionSpec::Schema::ArrayOf)
+    expect(field.schema.item).to be_a(ActionSpec::Schema::Scalar)
+  end
+
   it "reports item errors when the [{ type: ... }] form fails validation" do
     controller = build_controller do
       doc :create do

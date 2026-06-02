@@ -181,6 +181,39 @@ RSpec.describe ActionSpec::OpenApi::Generator do
     )
   end
 
+  it "emits multipart array file schemas without calling File.empty?" do
+    stub_const("BulkUploadsController", Class.new(ActionController::Base) do
+      include ActionSpec::Doc
+
+      doc(:create, "Bulk upload") do
+        form data: {
+          credential_keys: { type: [File], default: [] }
+        }
+      end
+
+      def create; end
+    end)
+
+    document = described_class.new(
+      routes: [
+        Route.new(
+          verb: "POST",
+          path: "/bulk_uploads",
+          defaults: { controller: "bulk_uploads", action: "create" }
+        )
+      ],
+      title: "ActionSpec Demo",
+      version: "2026.03"
+    ).call
+
+    schema = document.dig("paths", "/bulk_uploads", "post", "requestBody", "content", "multipart/form-data", "schema")
+
+    expect(schema.dig("properties", "credential_keys")).to include(
+      "type" => "array",
+      "items" => include("type" => "string", "format" => "binary")
+    )
+  end
+
   it "marks request bodies as required for json! and required: true declarations" do
     stub_const("ProfilesController", Class.new(ActionController::Base) do
       include ActionSpec::Doc
